@@ -42,8 +42,6 @@ $$
 
 The widely separated decay time scales make the system stiff. Eliminating $y_3=1-y_1-y_2$ gives a two-dimensional system for stiffness analysis. The structural zero eigenvalue associated with conservation is excluded from the stiffness ratio; the ratio is evaluated where both relevant decay modes are nonzero.
 
-![Robertson reference concentrations and the early transient of the second species](MTH321-Group-E-visualization-report/Robertson_figures_code/figures/fig_solution.png)
-
 ## Numerical Methods and Experiments
 
 | Method | Role in the study |
