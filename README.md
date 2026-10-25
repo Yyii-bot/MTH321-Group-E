@@ -17,22 +17,19 @@ run on the team venv (numpy / scipy / matplotlib only):
 |---|---|---|
 | week5_verify_analytic.py | 5 | manufactured data checks (direction 2 + L-shape), no solver involved |
 | week5_boundary_rows.py | 5 | the four right-edge rows verified by substituting u* samples; corner-ownership helper |
-| week5_milestone.md | 5 | weekly milestone text (completed / plan / blocker) |
 | week6_mixed_refinement.py | 6 | reference FDM solver + four-mesh tables, scaled residuals, asymmetry, GMRES tolerance sweep |
 | week6_lshape_fem.py | 6 | reference P1 FEM on the exact L-shape mesh, uniform refinement, corner-aware quadrature, corner/field error split |
-| week6_milestone.md | 6 | weekly milestone text with the actual measured numbers |
+| milestones.md | 5-9 | weekly milestones, one section per week (completed / plan / blocker) |
 | week7_clinic_readiness.md | 7 | clinic sheet: discretisation/norm/tolerance triple, evidence list, weaknesses, adaptive protocol |
 | week7_effectivity.py | 7 | effectivity index (eta / true error) table + figure for the adaptive sequence |
 | week8_depth_checks.py | 8 | matched-settings gate, tolerance sweep, direct-vs-iterative at matched accuracy, FDM-vs-FEM gate |
 | week8_smooth_vs_nonsmooth.py | 8 | depth comparison 4: smooth vs. singular on the same FEM/meshes/norms; Duffy L2 integrator + theta/rho split |
 | week8_ai_audit_log.md | 8 | five-gate AI audit records for the report appendix |
-| week8_milestone.md | 8 | weekly milestone text |
 | week9_final_audit.md | 9 | the pre-submission checklist (run it top to bottom) |
-| week9_milestone.md | 9 | weekly milestone text: final audit executed, package frozen |
 | report_testing_validation.md | 9 | the verification & validation report behind every quoted number |
 | results_verified.md | 6-9 | every real, reproducible number with its rerun command -- the only file to quote from |
 | needs_from_team.md | 7 | table of missing inputs, who provides them, what they block, fallbacks |
-| ICS.md | 9 | Individual Contribution Statement draft |
+| ICS.md | 9 | Individual Contribution Statement (signed) |
 
 ## Conventions used throughout
 
