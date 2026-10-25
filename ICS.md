@@ -6,10 +6,6 @@ two boundary closures) + Open Direction 1 (L-shaped domain with adaptive
 refinement); all four depth comparisons.
 My seat: **Testing & Validation**.
 
-> Final version. Teammate names in the "What I did not do" section are
-> left as role placeholders because this file is mine to sign, not
-> theirs.
-
 ## My responsibility
 
 I owned the question "can the numbers in the report be believed". That
