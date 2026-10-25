@@ -1,0 +1,188 @@
+
+########################################################################
+# Week 1  reference-solution three-level chain
+########################################################################
+====================================================================
+reference.py - self-built reference solution, three-level chain
+====================================================================
+[Level 1] Radau dual-tolerance comparison
+  tolerance sets: rtol=1e-11/atol=1e-13  vs  rtol=1e-13/atol=1e-15 (100x apart)
+  max pointwise component difference over grid = 2.130e-12
+  confirmed digits of y(40) per component: [12, 17, 12]
+  y(40) = [0.7158270687, 9.1855347646e-06, 0.2841637457]
+  vs problem-pack orientation value (0.7158271, 9.1855e-6, 0.2841637), relative: 4.37e-08, 3.78e-06, 1.61e-07
+[Level 2] cross-family validation (max pointwise difference vs Radau)
+  LSODA : 8.931e-12
+  BDF   : 1.417e-11
+[Level 3] sanity checks
+  reference mass-conservation defect max|sum-1| = 1.554e-15 (expected at round-off level)
+  reference minimum component min(Y) = -2.623e-18 (expected non-negative)
+====================================================================
+
+########################################################################
+# Week 2  unit-test suite (PASS/FAIL)
+########################################################################
+========================================================================
+validation_tests.py - unit-test suite against the team-built oracle (Week 2)
+========================================================================
+[T1] PASS  implicit Euler y(40) vs oracle
+      implicit Euler h=0.1, y(40) rel. err per component = 4.86e-04, 1.47e-03, 1.22e-03 (bound < 1%)
+[T2] PASS  mass-conservation defect
+      max|sum-1| = 4.44e-16 (bound < 1e-10)
+[T3] PASS  non-negativity over trajectory
+      min(trajectory components) = 0.000e+00 (threshold -1e-12; reference itself min ~ -2.6e-18)
+[T4] PASS  RK4 logistic order check
+      RK4 order on logistic = 4.07 (theory 4)
+[T5] PASS  explicit Euler logistic order check
+      explicit Euler order on logistic = 0.94 (theory 1)
+[T6] PASS  first-step Newton residual trace
+      first-step Newton: converged=True, 13 iterations, rose_first=True, final residual=5.55e-17, trajectory=[4.0e-03, 4.8e+01, 1.2e+01, 3.0e+00, 7.4e-01, 1.8e-01, 4.5e-02, 1.0e-02,
+ 1.9e-03, 1.5e-04, 1.4e-06, 1.2e-10, 5.6e-17]
+[T7] PASS  eigenvalue/stiffness check values
+      t=0.0001: S=3.010e+03 vs pack 3.0e+03 (rel 0.3%); t=0.01: S=5.422e+03 vs pack 5.4e+03 (rel 0.4%); t=40: S=1.584e+05 vs pack 1.6e+05 (rel 0.3%); |lambda|max(40)=3.3928e+03 vs pack 3.39e3 (rel 0.0%)
+[T8] PASS  oracle self-agreement digits
+      confirmed digits of y(40) = [12, 17, 12] (bound >= 8 each), max grid difference = 2.13e-12
+========================================================================
+RESULT: 8/8 tests PASS  - validated conclusions may be handed to the team
+========================================================================
+
+########################################################################
+# Week 2-3  edge-case hunting experiments
+########################################################################
+========================================================================
+edge_cases.py - edge-case hunting experiments (Week 2-3)
+========================================================================
+[E1] |lambda|max(40) = 3.3928e+03   S(40) = 1.5840e+05
+     Euler frozen limit h < 2/|lambda|max = 5.895e-04
+     RK4   frozen limit h < 2.7853/|lambda|max = 8.209e-04
+------------------------------------------------------------------------
+[Explicit Euler] step sweep (frozen-Jacobian limit h < 5.89e-04):
+          h    steps  stable  negative      min(y)  blow-up t      err@40
+   2.00e-03    20000   False      True         nan      0.022         nan
+   1.00e-03    40000   False      True         nan       9.37         nan
+   8.00e-04    50000   False      True         nan       17.7         nan
+   7.00e-04    57143   False      True         nan       27.1         nan
+   6.00e-04    66667    True      True  -4.842e-06        nan   3.172e-03
+   5.90e-04    67797    True     False   0.000e+00        nan   2.061e-06
+   5.00e-04    80000    True     False   0.000e+00        nan   1.747e-06
+   4.00e-04   100000    True     False   0.000e+00        nan   1.397e-06
+   2.00e-04   200000    True     False   0.000e+00        nan   6.987e-07
+   1.00e-04   400000    True     False   0.000e+00        nan   3.493e-07
+------------------------------------------------------------------------
+[RK4] step sweep (frozen-Jacobian limit h < -8.21e-04):
+          h    steps  stable  negative      min(y)  blow-up t      err@40
+   2.00e-03    20000   False      True         nan       0.02         nan
+   1.50e-03    26667   False      True         nan       6.89         nan
+   1.00e-03    40000   False      True         nan       31.2         nan
+   9.00e-04    44445    True     False   0.000e+00        nan   4.283e-02
+   8.20e-04    48781    True     False   0.000e+00        nan   1.011e-11
+   7.00e-04    57143    True     False   0.000e+00        nan   4.338e-12
+   5.00e-04    80000    True     False   0.000e+00        nan   8.630e-13
+   2.00e-04   200000    True     False   0.000e+00        nan   7.638e-14
+------------------------------------------------------------------------
+[E4] Newton tolerance sweep (fixed h=0.1):
+   newton_tol   cons_defect       err@40
+        1e-01     0.000e+00    2.842e-01
+        1e-02     0.000e+00    2.842e-01
+        1e-04     6.661e-16    3.525e-04
+        1e-06     1.110e-15    3.511e-04
+        1e-08     8.882e-16    3.481e-04
+        1e-10     6.661e-16    3.479e-04
+        1e-12     4.441e-16    3.479e-04
+        1e-14     4.441e-16    3.479e-04
+------------------------------------------------------------------------
+[E5] adaptive implicit Euler tolerance sweep (h0=0.1):
+        tol   accept   reject      min h       err@40       y2(40)
+      1e-01      400        0   1.00e-01    1.743e-04   9.1923e-06
+      1e-02      400        0   1.00e-01    1.743e-04   9.1923e-06
+      1e-04      400        0   1.00e-01    1.743e-04   9.1923e-06
+      1e-06     1023        8   3.91e-04    6.978e-05   9.1882e-06
+      1e-08    10163       12   2.44e-05    7.159e-06   9.1858e-06
+      1e-10   100955       15   3.05e-06    6.988e-07   9.1856e-06
+========================================================================
+Figures written to D:\KimiData\kimi\Workspaces\Project 1\robertson_project\MTH321-Group-E\figures\validation
+========================================================================
+
+########################################################################
+# Week 3  convergence-order verification
+########################################################################
+========================================================================
+convergence_study.py - convergence-order verification (Week 3)
+========================================================================
+[Implicit Euler] observed order = 0.99 ± 0.00 (theory 1)
+    h=6.250e-01   err@40=2.131e-03
+    h=3.125e-01   err@40=1.078e-03
+    h=1.562e-01   err@40=5.424e-04
+    h=7.812e-02   err@40=2.720e-04
+    h=3.906e-02   err@40=1.362e-04
+    h=1.953e-02   err@40=6.818e-05
+[Explicit Euler] observed order = 1.00 ± 0.00 (theory 1)
+    h=5.000e-04   err@40=1.747e-06
+    h=2.500e-04   err@40=8.734e-07
+    h=1.250e-04   err@40=4.367e-07
+    h=6.250e-05   err@40=2.183e-07
+[RK4] observed order = 5.09 ± 0.15 (theory 4)
+    h=8.000e-04   err@40=8.730e-12
+    h=6.000e-04   err@40=2.132e-12
+    h=5.000e-04   err@40=8.630e-13
+    h=4.500e-04   err@40=4.503e-13
+========================================================================
+Figure written to D:\KimiData\kimi\Workspaces\Project 1\robertson_project\MTH321-Group-E\figures\validation\fig06_convergence_orders.png
+========================================================================
+
+########################################################################
+# Week 4  pre-submission final check
+########################################################################
+========================================================================
+final_check.py - pre-submission final check (Week 4)
+========================================================================
+[F1] fixed-step implicit Euler: successively halved h, y2(40) vs oracle
+           h         y2(40)      err(y2)     err(inf)
+   4.000e-01 9.23917406e-06    5.364e-08    1.375e-03
+   2.000e-01 9.21251577e-06    2.698e-08    6.930e-04
+   1.000e-01 9.19906765e-06    1.353e-08    3.479e-04
+   5.000e-02 9.19231208e-06    6.777e-09    1.743e-04
+   2.500e-02 9.18892618e-06    3.391e-09    8.724e-05
+   1.250e-02 9.18723117e-06    1.696e-09    4.365e-05
+[F1'] adaptive implicit Euler: successively tightened tol, y2(40) vs oracle
+        tol   accept         y2(40)      err(y2)
+      1e-02      400 9.19231208e-06    6.777e-09
+      1e-04      400 9.19231208e-06    6.777e-09
+      1e-06     1023 9.18824714e-06    2.712e-09
+      1e-08    10163 9.18581299e-06    2.782e-10
+[F1''] comparison with problem-pack orientation value (0.7158271, 9.1855e-6, 0.2841637):
+  oracle vs pack value, relative: 4.37e-08, 3.78e-06, 1.61e-07
+------------------------------------------------------------------------
+  fixed step N=1600: err@40=8.724e-05  nfev=4809  nnewton=3209  t=0.233s
+  fixed step N=2000: err@40=6.981e-05  nfev=6008  nnewton=4008  t=0.283s
+  fixed step N=2400: err@40=5.818e-05  nfev=7208  nnewton=4808  t=0.355s
+  fixed step N=2800: err@40=4.988e-05  nfev=8408  nnewton=5608  t=0.406s
+  fixed step N=3200: err@40=4.365e-05  nfev=9608  nnewton=6408  t=0.458s
+[F2] cost vs accuracy (error target err@40 <= 7.0e-05; cost measure: nfev / nnewton / wall time)
+  fixed step  N=2000: err=6.981e-05  nfev=6008  nnewton=4008  wall=0.283s
+  adaptive tol=1e-6:  err=6.978e-05  nfev=9396  nnewton=6303  wall=0.457s
+  => adaptive/fixed nfev ratio = 1.56
+  Negative result (reported honestly): the naive step-doubling controller solves three implicit steps per accepted step (one coarse + two half steps); that 3x per-step overhead is partially absorbed by large relaxed-tail steps, and the measured total nfev is about 1.6 times the fixed-step run. Step doubling's value here is not saving work - it is not needing to know h in advance and crossing the transient automatically.
+------------------------------------------------------------------------
+[F3] report-number traceability table
+  reference y(40) = (0.71582707, 9.1855e-6, 0.2841637)
+      source: reference.py output [Level 1] (12/17/12 digits confirmed by the two tolerance runs)
+  |lambda|max(40) = 3.393e3, S(40) = 1.58e5
+      source: fig01_eigenvalue_history.png / edge_cases E1 output
+  explicit Euler stability limit h < 5.9e-4 (frozen estimate, confirmed by measurement)
+      source: fig02_euler_step_sweep.png (h >= 6e-4 unstable or negative)
+  RK4 stability limit h < 8.2e-4 (frozen estimate, confirmed)
+      source: fig03_rk4_step_sweep.png (error jumps 9 orders of magnitude at h >= 9e-4)
+  observed orders 0.99±0.00 / 1.00±0.00 / 5.09±0.15 (>= 4)
+      source: fig06_convergence_orders.png + convergence_study.py output
+  conservation defect independent of Newton tolerance (algebraic preservation, e^T J = 0)
+      source: fig04_newton_tol_sweep.png / E4 output (defect ~1e-16 for tol 1e-1..1e-14, yet the solution is 28% wrong at tol >= 1e-2)
+  adaptive tol >= 1e-4: controller inactive, err@40 = 1.7e-4
+      source: fig05_adaptive_tol_sweep.png / E5 output
+  at matched error 7e-5, adaptive nfev ~ 1.6x fixed step (measured 9396/6008)
+      source: fig07_cost_vs_accuracy.png / F2 output
+========================================================================
+
+########################################################################
+# run_all finished: 5/5 steps succeeded
+########################################################################
