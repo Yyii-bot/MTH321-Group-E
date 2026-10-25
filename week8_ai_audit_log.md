@@ -59,3 +59,16 @@ used, per the course's five-gate audit. The gates:
    the independent scipy dblquad validation of the integrator; after
    the fix the Duffy rule matches dblquad to machine precision on
    (1+x+2y)^2 over the unit right triangle (2.0833...).
+7. Two prediction misses while building `week8_iterative_ladder.py`,
+   both caught by running the numbers instead of trusting the prediction.
+   (a) Pre-computation worksheet predicted CG would visibly break down on
+   the nonsymmetric mixed matrix; measured: it converged cleanly (748
+   iters vs 436 on the SPD matrix at N=128, clean error). The report
+   now says "unjustified in theory, survives mild nonsymmetry in
+   practice, quantified" instead of the predicted failure. (b) The
+   first version ran Jacobi/GS at N=256 (O(N^2) iterations, ~300k)
+   and hit the 300 s time budget; the released version caps the
+   classical rungs at N=128, states that openly in the output, and
+   runs N=256 only for SOR/CG/GMRES+ILU. Also a real code bug in the
+   first COO assembler (lists of arrays instead of concatenated flat
+   arrays) -- caught the moment the theory table ran, fixed.

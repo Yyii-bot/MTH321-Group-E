@@ -156,6 +156,30 @@ crossover observed in the tested range**, reported as such. Any timing
 claim with a preconditioner must name the preconditioner; ours has none,
 a deliberate worst case.
 
+**Depth 2b -- the full iterative ladder (lecture methods) on the same
+system.** `week8_iterative_ladder.py` (`results_verified.md` section 7)
+runs Jacobi, Gauss-Seidel, SOR, CG and GMRES+ILU on the same ghost-Neumann
+matrix, same stop (scaled residual <= 1e-10), N = 64..256. Every rung
+loses to the direct solve. The classical rungs scale exactly as the
+lecture predicts -- Jacobi needs 23250 -> 85630 iterations per halving
+(O(N^2 log)), GS half of that, SOR with a swept omega (1.900 on this
+system) 590 -> 9360 -- but even the best rung, GMRES+ILU, is 1.5-1.9x
+SLOWER than direct at every N: the ILU setup costs about what the direct
+LU costs at these 2D sizes, and the preconditioned GMRES then needs only
+5-9 iterations. The no-crossover finding survives preconditioning.
+Two theory checks from the lecture are verified with real numbers:
+SOR's omega_opt = 2/(1+sin(pi h)) on its own model problem (pure
+Dirichlet square) takes 270 iterations at N=64 -- fewer than any value
+on the 0.025-spaced sweep grid (best grid point 1.900: 310), and any
+omega above it diverges; and CG with the Jacobi preconditioner converges
+in exactly the same 221 iterations as plain CG on the 5-point Dirichlet
+matrix, confirming D^-1A is a constant scaling there so the Jacobi
+preconditioner buys nothing. One honest surprise: CG *converged* on our
+nonsymmetric mixed matrix (||A-A^T||/||A|| = 0.12), at 748 vs 436
+iterations on the SPD Dirichlet matrix at N=128, with a clean error.
+The theory says CG requires symmetry; mild nonsymmetry slowed it by
+~1.7x but did not break it. We report both halves of that sentence.
+
 **Depth 3 -- FDM vs. FEM.** The matched-settings gate is written, tested,
 and passed its self-check; the real comparison awaits both main solvers
 and is reported as pending, not faked.

@@ -9,6 +9,7 @@ run on the team venv (numpy / scipy / matplotlib only):
     python week6_lshape_fem.py
     python week8_depth_checks.py        # slow: GMRES sweeps + N=256 timings
     python week8_smooth_vs_nonsmooth.py  # depth comparison 4: both legs, one command
+    python week8_iterative_ladder.py     # slow: Jacobi/GS at N=128, ~2 min
     python week7_effectivity.py <adaptive.csv>   # once the adaptive driver exists
 
 ## Files
@@ -24,6 +25,7 @@ run on the team venv (numpy / scipy / matplotlib only):
 | week7_effectivity.py | 7 | effectivity index (eta / true error) table + figure for the adaptive sequence |
 | week8_depth_checks.py | 8 | matched-settings gate, tolerance sweep, direct-vs-iterative at matched accuracy, FDM-vs-FEM gate |
 | week8_smooth_vs_nonsmooth.py | 8 | depth comparison 4: smooth vs. singular on the same FEM/meshes/norms; Duffy L2 integrator + theta/rho split |
+| week8_iterative_ladder.py | 8 | the lecture's method ladder (Jacobi/GS/SOR/CG/GMRES+ILU) on the Direction-2 matrix; SOR omega theory check; crossover verdict |
 | week8_ai_audit_log.md | 8 | five-gate AI audit records for the report appendix |
 | week9_final_audit.md | 9 | the pre-submission checklist (run it top to bottom) |
 | report_testing_validation.md | 9 | the verification & validation report behind every quoted number |

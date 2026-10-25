@@ -148,7 +148,17 @@ reproduction check.
    (direct faster by 19x-214x across runs) -- reported as "no crossover
    observed", which the brief explicitly accepts as a finding. Any timing
    claim with a preconditioner must name it; ours has none, a deliberate
-   worst case.
+   worst case. **Extended 2026-10-25 by `week8_iterative_ladder.py`**
+   (results_verified.md section 7): the full lecture ladder (Jacobi, GS,
+   SOR, CG, GMRES+ILU) on the same matrix at the same stop criterion
+   still loses to direct on every rung -- GMRES+ILU is the closest at
+   1.5-1.9x SLOWER, because the ILU setup costs about what the direct LU
+   costs at these 2D sizes. SOR's omega_opt formula is verified on its
+   own model problem (270 iters at the theory value vs 310 at the best
+   grid point, N=64). The surprise: CG converged on the nonsymmetric
+   matrix (||A-A^T||/||A|| = 0.12) at ~1.7x the SPD iteration count --
+   unjustified in theory, survives mild nonsymmetry in practice, and we
+   say both halves of that sentence.
 4. **FDM vs. FEM gate.** The matched-settings gate functions passed their
    demo self-check, but no real FEM numbers have gone through it yet --
    stated honestly, the gate is *ready*, the comparison is *pending* both

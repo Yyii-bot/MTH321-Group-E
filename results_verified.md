@@ -158,6 +158,78 @@ singular leg degrades one more step toward 4/3.  The ladder
 the quantified content of this depth comparison; the energy column
 (1.0 -> 2/3) is its textbook counterpart.
 
+## 7. Iterative method ladder (Jacobi / GS / SOR / CG / GMRES+ILU)
+
+Source: `week8_iterative_ladder.py` -- the course lecture's method ladder
+run on the SAME discrete system as section 1 (same assembler, ghost
+Neumann, same scaled-residual stop 1e-10). Extends the Week-8
+"direct vs. iterative" depth item beyond unpreconditioned GMRES.
+Reproduce: `python week8_iterative_ladder.py` (about 2 min: Jacobi/GS
+at N=128 need 85k/43k iterations). Wall times are single runs and
+vary a few percent between runs; iteration counts are stable.
+
+### 7a. The ladder, mixed BC (ghost Neumann), u* = exp(x+y)
+
+| N | method | wall s | iters | Linf error at stop |
+|---|---|---|---|---|
+| 64 | spsolve (direct) | 0.010 | -- | 5.41e-05 |
+| 64 | Jacobi | 1.475 | 23250 | 5.42e-05 |
+| 64 | Gauss-Seidel | 3.431 | 11620 | 5.42e-05 |
+| 64 | SOR w=1.900 | 0.186 | 590 | 5.41e-05 |
+| 64 | CG | 0.017 | 425 | 5.41e-05 |
+| 64 | GMRES+ILU | 0.015 | 5 | 5.41e-05 |
+| 128 | spsolve (direct) | 0.047 | -- | 1.35e-05 |
+| 128 | Jacobi | 38.387 | 85630 | 1.40e-05 |
+| 128 | Gauss-Seidel | 57.081 | 42810 | 1.40e-05 |
+| 128 | SOR w=1.900 | 3.456 | 2480 | 1.36e-05 |
+| 128 | CG | 0.512 | 748 | 1.35e-05 |
+| 128 | GMRES+ILU | 0.088 | 6 | 1.35e-05 |
+| 256 | spsolve (direct) | 0.272 | -- | 3.38e-06 |
+| 256 | SOR w=1.900 | 55.824 | 9360 | 3.60e-06 |
+| 256 | CG | 1.322 | 1351 | 3.40e-06 |
+| 256 | GMRES+ILU | 0.475 | 9 | 3.38e-06 |
+
+Jacobi/GS at N=256 not run (O(N^2) iterations; the 64->128 counts show
+the growth explicitly). SOR omega for the mixed system swept at N=64:
+best 1.900 (590 iters).
+
+Measured findings:
+1. **No crossover on any rung, including GMRES+ILU** (closest: 1.5-1.9x
+   SLOWER than direct at every N). The ILU setup costs about what the
+   direct LU costs at these 2D sizes, and the preconditioned GMRES then
+   needs only 5-9 iterations -- the preconditioner is excellent, the
+   total still loses. Extrapolation beyond N=256 is stated, not tested.
+2. **Classical methods scale as theory says**: Jacobi iterations grow
+   23250 -> 85630 per halving (x3.7 ~ N^2 log); GS is consistently a
+   factor ~2 better in iterations but slower per iteration here.
+3. **CG on the nonsymmetric matrix converged** (425/748/1351 iters,
+   scaled res ~1e-11, clean errors) even though ||A-A^T||/||A|| = 0.12
+   makes it unjustified in theory. Theory-vs-practice nuance, measured
+   not assumed: mild nonsymmetry slowed CG by ~1.7x vs the SPD
+   Dirichlet matrix (748 vs 436 iters at N=128) but did not break it.
+
+### 7b. SOR omega_opt on the lecture's model problem (pure-Dirichlet square)
+
+| N | h | theory omega_opt = 2/(1+sin(pi h)) | measured best omega | iters at best | iters at theory value |
+|---|---|---|---|---|---|
+| 64 | 0.01562 | 1.906455 | 1.900 (0.025-spaced grid) | 310 | 270 |
+| 128 | 0.00781 | 1.952093 | (sweep at 64 only) | -- | 530 |
+
+The theory value is verified on its own model problem: 270 iterations at
+omega = 1.906455, better than any grid point, and omega > omega_opt
+diverges (aborted by a 100x residual-growth detector). On the
+nonsymmetric mixed system the same formula is a starting guess only --
+the sweep found 1.900 there too, but the lecture's own caveat (the
+formula assumes the standard model) is stated in the report.
+
+### 7c. Two theory spot-checks
+
+| check | result |
+|---|---|
+| CG vs CG+Jacobi-precond, Dirichlet square N=64 | 221 vs 221 iterations -- identical, confirming D^-1A = (h^2/4)A is a constant scaling, so the Jacobi preconditioner buys nothing here (lecture point 13, verified) |
+| CG on SPD Dirichlet matrix, N=128 | 436 iters, clean |
+| CG on nonsymmetric mixed matrix, N=128 | 748 iters, scaled res 5.7e-11, Linf error 1.35e-05 -- converged, see 7a finding 3 |
+
 ## Not yet real (do not quote as results)
 
 - Adaptive effectivity numbers, adaptive-vs-uniform slopes -- awaiting
