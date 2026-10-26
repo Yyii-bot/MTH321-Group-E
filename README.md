@@ -1,72 +1,117 @@
-# E_validation -- Testing & Validation seat, Project 2
+# Testing & Validation Package — Project 2 (Elliptic BVPs)
 
-Everything the Testing & Validation seat owns, split by week. All scripts
-run on the team venv (numpy / scipy / matplotlib only):
+Code-and-evidence deliverable for the Testing & Validation seat (Rong Yin).
+This package answers one question for the team report: **can every quoted
+number survive the instructor rerunning the code?** It contains the
+manufactured-data checks, two deliberately independent reference solvers,
+the four depth-comparison studies, the five-gate AI audit log, and the
+ledger (`results_verified.md`) that the report is allowed to quote from.
+One statement per number, one rerun command per statement.
 
-    python week5_verify_analytic.py
-    python week5_boundary_rows.py
-    python week6_mixed_refinement.py
-    python week6_lshape_fem.py
-    python week8_depth_checks.py        # slow: GMRES sweeps + N=256 timings
-    python week8_smooth_vs_nonsmooth.py  # depth comparison 4: both legs, one command
-    python week8_iterative_ladder.py     # slow: Jacobi/GS at N=128, ~2 min
-    python week7_effectivity.py <adaptive.csv>   # once the adaptive driver exists
+## Problems and data
 
-## Files
+Both problems use the test-bank sign convention **−Δu = f**.
 
-| file | week | what it is |
+**Direction 2 — mixed boundary data** on the unit square. Dirichlet on
+x = 0, y = 0, y = 1 (corners included); the right edge x = 1 carries
+Neumann ∂ₙu = q or Robin ∂ₙu + βu = r (β = 2), closed either with the
+one-sided first-order row or the ghost-point row. Manufactured data
+(centralised in `week5_verify_analytic.py`):
+
+- u* = exp(x+y),  f = −2 exp(x+y)
+- q(y) = exp(1+y),  r(y) = q + βu* = 3 exp(1+y)
+
+**Open direction 1 — L-shaped domain** (−1,1)² minus one unit quadrant,
+area exactly 3. Singular solution u* = r^{2/3} sin(2φ/3) with
+φ ∈ [0, 3π/2] (unit-tested in week 5, including the quadrant-IV branch);
+smooth comparison leg u_s = exp(x+y). P1 FEM on exactly-represented
+uniform meshes, plus the smooth-vs-singular depth study on identical
+meshes and norms.
+
+## Environment
+
+Recorded runs: Python 3.12, NumPy, SciPy, Matplotlib (the course venv).
+No other dependencies; nothing here needs scikit-fem, pandas, or PyAMG.
+
+## How to reproduce
+
+Run each script from this directory; outputs are console tables intended
+to be pasted into `results_verified.md`.
+
+**Fast (seconds):**
+
+```bash
+python week5_verify_analytic.py     # manufactured data, all green expected
+python week5_boundary_rows.py       # right-edge rows: O(h) local residuals
+python week6_mixed_refinement.py    # Direction-2 convergence tables + asymmetry
+python week6_lshape_fem.py          # L-shape energy rates (its printed L2 column is superseded, see Conventions)
+python week8_smooth_vs_nonsmooth.py # depth comparison 4, both legs + Duffy integrator validation
+python week7_effectivity.py <adaptive.csv>   # once the adaptive CSV exists
+```
+
+**Slow (minutes):**
+
+```bash
+python week8_depth_checks.py         # GMRES sweeps + N=256 timings, ~2-3 min
+python week8_iterative_ladder.py     # Jacobi/GS at N=128 need 85k/43k iterations, ~2 min
+```
+
+Wall times move between runs and machines; iteration counts, residuals,
+errors and fitted orders are the portable evidence.
+
+## Verification gates (all must stay green before a number is quoted)
+
+- scaled residual ≤ 1e-10 at any iterative stop (rtol = 1e-8 was measured
+  to leave the solution error 80% wrong — week8_depth_checks.py);
+- L-shape L2 quadrature self-check (corner levels 3 vs 4) below ~5%;
+- mesh area exactly 3 at every refinement level;
+- Dirichlet corner-ownership assertion passes in the assembler;
+- any number in the report traces to `results_verified.md` → table →
+  script → command.
+
+## File map
+
+| Path | Week | Contents |
 |---|---|---|
-| week5_verify_analytic.py | 5 | manufactured data checks (direction 2 + L-shape), no solver involved |
-| week5_boundary_rows.py | 5 | the four right-edge rows verified by substituting u* samples; corner-ownership helper |
-| week6_mixed_refinement.py | 6 | reference FDM solver + four-mesh tables, scaled residuals, asymmetry, GMRES tolerance sweep |
-| week6_lshape_fem.py | 6 | reference P1 FEM on the exact L-shape mesh, uniform refinement, corner-aware quadrature, corner/field error split |
-| milestones.md | 5-9 | weekly milestones, one section per week (completed / plan / blocker) |
-| week7_clinic_readiness.md | 7 | clinic sheet: discretisation/norm/tolerance triple, evidence list, weaknesses, adaptive protocol |
-| week7_effectivity.py | 7 | effectivity index (eta / true error) table + figure for the adaptive sequence |
-| week8_depth_checks.py | 8 | matched-settings gate, tolerance sweep, direct-vs-iterative at matched accuracy, FDM-vs-FEM gate |
-| week8_smooth_vs_nonsmooth.py | 8 | depth comparison 4: smooth vs. singular on the same FEM/meshes/norms; Duffy L2 integrator + theta/rho split |
-| week8_iterative_ladder.py | 8 | the lecture's method ladder (Jacobi/GS/SOR/CG/GMRES+ILU) on the Direction-2 matrix; SOR omega theory check; crossover verdict |
-| week8_ai_audit_log.md | 8 | five-gate AI audit records for the report appendix |
-| week9_final_audit.md | 9 | the pre-submission checklist (run it top to bottom) |
-| report_testing_validation.md | 9 | the verification & validation report behind every quoted number |
-| results_verified.md | 6-9 | every real, reproducible number with its rerun command -- the only file to quote from |
-| needs_from_team.md | 7 | table of missing inputs, who provides them, what they block, fallbacks |
-| ICS.md | 9 | Individual Contribution Statement (signed) |
+| `week5_verify_analytic.py` | 5 | manufactured data checks, no solver involved |
+| `week5_boundary_rows.py` | 5 | four right-edge rows verified by substitution; corner-ownership helper |
+| `week6_mixed_refinement.py` | 6 | reference FDM solver; four-mesh tables; scaled residuals; asymmetry; tolerance probe |
+| `week6_lshape_fem.py` | 6 | reference P1 FEM on exact L-shape meshes; energy rates; mesh audit |
+| `week7_clinic_readiness.md` | 7 | frozen discretisation/norm/tolerance triple; evidence list; adaptive protocol |
+| `week7_effectivity.py` | 7 | effectivity index (η / true error) for the adaptive sequence, CSV in → table + figure |
+| `week8_depth_checks.py` | 8 | matched-settings gate; tolerance sweep; direct-vs-iterative; FDM-vs-FEM gate |
+| `week8_smooth_vs_nonsmooth.py` | 8 | depth comparison 4; Duffy L2 integrator (validated vs `scipy.dblquad`); θ/ρ split |
+| `week8_iterative_ladder.py` | 8 | Jacobi/GS/SOR/CG/GMRES+ILU ladder on the Direction-2 matrix; SOR ω_opt theory check |
+| `week8_ai_audit_log.md` | 8 | five-gate audit of every AI-generated solver piece, incl. caught bugs |
+| `week9_final_audit.md` | 9 | pre-submission checklist with `[x]` / `[team]` status per item |
+| `report_testing_validation.md` | 9 | the V&V narrative behind the report's verification section |
+| `milestones.md` | 5–9 | weekly milestones, one section per week |
+| `results_verified.md` | 6–9 | every quotable number with its rerun command — quote nothing else |
+| `needs_from_team.md` | 7 | missing inputs, who provides them, what they block, fallbacks |
+| `ICS.md` | 9 | Individual Contribution Statement (official Part B format) |
 
-## Conventions used throughout
+## Conventions and status notes
 
-- We solve **-Delta u = f** (the test bank's sign convention); for
-  u* = exp(x+y) that means f = -2 exp(x+y). The problem pack prints
-  "Delta u = f" once but its data matches -Delta u = f.
-- Residuals are reported **row-scaled** (D_ii = max_j |A_ij|) wherever
-  PDE rows (h^-2) and boundary rows (h^-1) coexist. Raw residuals are
-  printed once, to justify the scaling.
-- All L-shape L2 errors use the Duffy-transform tensor-Gauss integrator
-  from week8_smooth_vs_nonsmooth.py (validated against scipy dblquad);
-  energy errors use the 3-point rule. The corner 3-vs-4-level check must
-  stay below ~5% before a number is quoted. The L2 values printed by
-  week6_lshape_fem.py are quadrature-inflated and superseded -- do not
-  quote them.
-- The reference solvers in week6 are validation scaffolding. They are
-  deliberately independent of the main implementation; if the two
-  disagree, that is a finding.
-
-## Headline measured numbers (Week 6-8 runs)
-
-- Direction 2: first-order closure -> order ~1 in every norm (both BCs);
-  ghost closure -> order ~2 in every norm including the right-edge Linf.
-- Scaled residuals 1e-15..1e-14 on all meshes; ||A - A^T||/||A|| ~ 0.12
-  (both closures) -> sparse direct, no CG.
-- Tolerance contamination: GMRES rtol 1e-8 still shifts Linf error
-  ~80%; first clean level 1e-10 (N=128).
-- Direct vs. iterative: no crossover for N <= 256 (direct faster by
-  19x-214x, unpreconditioned GMRES).
-- L-shape, uniform meshes: energy p = 0.66 vs h (theory 2/3), p = 0.33
-  vs N_dof; L2 p = 1.25-1.32 vs h (Duffy quadrature, self-check 1e-5),
-  rising toward the h^{4/3} guarantee with refinement. The earlier
-  ~1.0 L2 rate came from quadrature pollution and is retracted
-  (see results_verified.md, section 4).
-- Smooth vs. nonsmooth (same solver, meshes, norms): smooth leg L2
-  1.65-1.70 / energy 1.00; singular leg L2 1.25-1.32 / energy 0.66.
-  Theta/rho split shows the smooth leg's own L2 is pollution-capped
-  near 5/3 -- the quantified ladder 2.0 -> 5/3 -> 4/3.
+- Residuals are **row-scaled** (D_ii = max_j |A_ij|) wherever PDE rows
+  (h⁻²) and boundary rows (h⁻¹) coexist; raw residuals are printed once
+  to justify the scaling.
+- Nonsymmetry is quoted in the **inf norm**: ‖A−Aᵀ‖∞/‖A‖∞ ≈ 0.12 at
+  N = 64 for both closures. (The Algorithm Implementation seat reports a
+  Frobenius-norm ratio, a different functional — name the norm wherever
+  either is quoted.)
+- `week6_lshape_fem.py`'s printed L2 column is quadrature-inflated and
+  **superseded** by the Duffy re-measurement in
+  `week8_smooth_vs_nonsmooth.py`; its energy rates and mesh code remain
+  authoritative (the week-8/9 scripts import them).
+- The week-6 reference solvers are validation scaffolding, deliberately
+  independent of the main implementation. The cross-check is no longer
+  pending: on 2026-10-26 the main solver's ghost-Neumann errors agreed
+  with this package's reference solver to six significant figures at
+  N = 32/64/128 (L2 and Linf).
+- One open discrepancy is recorded in the audit trail (item in
+  `results_verified.md` section 4 note and `needs_from_team.md`): the
+  main implementation's corner-exact L2 quadrature reports singular-leg
+  errors ~3× smaller than this package's Duffy values at identical
+  degrees of freedom, same fitted orders. Absolute L2 values from the
+  two packages must not be mixed in one table until that head-to-head
+  is closed.

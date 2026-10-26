@@ -14,6 +14,15 @@ never arrives.
 | 6 | FEM solver on the L-shape (scikit-fem or own) callable for uniform + adaptive meshes | FEM seat | function + mesh/uh output format | Week 8 | FDM-vs-FEM depth item; independent reproduction of my L-shape rates | my mini-FEM is labelled "reference"; FDM-vs-FEM item reported as "not completed in range" |
 | 7 | run_all.py regenerating every report figure | Algo + Viz | runs end-to-end from repo root | Week 9 | Dimension C (reproducibility); my Week-9 audit item "clean env rerun" | zip my scripts with README as a partial reproduction package |
 | 8 | Report drafts (verification section source) | Viz | shared file | Week 8-9 | number-tracing pass (every figure traces to a table) | I trace against results_verified.md only |
+| 9 | L2-norm head-to-head: their corner-exact quadrature vs my Duffy values on the singular leg | me + Algo | same mesh, same solution, both error functionals printed side by side | before report freeze | mixing absolute L2 values from the two packages in one table (they differ ~3x at identical dof; fitted orders agree) | report the two norm definitions separately and say why; never average them |
+
+Status updates 2026-10-26: (1) confirmed — their data.py matches the bank
+convention. (2)+(3) closed — the main solver's ghost-Neumann errors agree
+with my reference solver to six significant figures at N = 32/64/128 (L2
+and Linf), so the Direction-2 cross-check is done. (9) is new from that
+review: singular-leg L2 absolute values differ ~3.2x at identical dof
+(theirs corner-exact adaptive angular quadrature ~1e-14, mine Duffy +
+tensor Gauss n=3), orders agree (both rising toward 4/3). Open.
 
 ## What I do NOT need
 
