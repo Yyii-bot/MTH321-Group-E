@@ -1,0 +1,21 @@
+{
+  "completed_utc": "2026-10-25T05:36:59.799286+00:00",
+  "command": "code/run_all.py",
+  "python": "3.12.12 (main, Oct  9 2025, 22:40:06) [GCC 12.2.0]",
+  "platform": "Linux-6.6.69-cube.pvm.guest.005.x-g039db8913c80-x86_64-with-glibc2.36",
+  "numpy": "2.2.5",
+  "scipy": "1.16.2",
+  "pandas": "2.3.2",
+  "matplotlib": "3.10.3",
+  "scikit-fem": "12.0.2",
+  "experiments": [
+    "E1",
+    "E2",
+    "E3",
+    "E4",
+    "E5",
+    "E6"
+  ],
+  "quick": false,
+  "predictions_sha256": "337a4574658907be92f928c088a05b2297b4d6fbcd95c16b8b348f39376f8e54"
+}

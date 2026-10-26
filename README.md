@@ -1,157 +1,185 @@
-MTH321 Group E: Numerical Solution of the Robertson Problem
+# Mixed-Boundary BVP: Role 3 Algorithm Implementation
 
-A numerical study of the Robertson chemical kinetics problem for **MTH321, Project 1 (ODE IVP)**. This repository combines mathematical derivations, solver code, independent validation, numerical results, and the final report and presentation.
+This is the code-only Algorithm Implementation deliverable for Direction 2. It contains the sparse finite-difference core, direct and iterative solvers, independent verification, controlled numerical experiments, tests, and one-command reproduction. No report or TeX installation is required to run or review the implementation.
 
-The project compares explicit Euler, classical fourth-order Runge-Kutta, and implicit Euler, with particular attention to stiffness, stability, Newton iteration, adaptive step sizes, and the cost of achieving a specified accuracy.
+The implementation covers mixed Dirichlet/Neumann and Dirichlet/Robin data, one-sided and ghost-point right-edge closures, matched two-dimensional FDM/P1-FEM benchmarks, smooth and singular L-shaped-domain problems, graded meshes, and a pure-Neumann compatibility/nullspace extension.
 
-[Final report](MTH321-Group-E-visualization-report/Robertson_ODE_Report_TeamE.pdf) · [Presentation slides](MTH321-Group-E-visualization-report/Robertson_ODE_SIide_TeamE.pdf) · [Mathematical derivation](MTH321-Group-E-mathematical-theory/Robertson_Mathematical_Derivation_EN.pdf) · [Validation report](MTH321-Group-E-testing-validation/report/testing-validation-section.md)
+## 1. Model and swappable data
 
-## Repository Guide
+The highlighted core model is the unit-diffusion Poisson equation
 
-| Directory | Contents |
-| --- | --- |
-| [`MTH321-Group-E-mathematical-theory`](MTH321-Group-E-mathematical-theory/) | English mathematical derivation covering the model, conservation law, Jacobians, stiffness, and numerical methods. |
-| [`MTH321-Group-E-Algorithm-Implementation`](MTH321-Group-E-Algorithm-Implementation/) | Experiment entry-point wrapper, reference-data interface specification, and tests for the intended solver API. See the completeness note below. |
-| [`MTH321-Group-E-testing-validation`](MTH321-Group-E-testing-validation/) | Independent validation code, seven saved validation figures, execution logs, review notes, and milestone reports. |
-| [`MTH321-Group-E-visualization-report`](MTH321-Group-E-visualization-report/) | Final report, presentation slides, and the report reproduction package, including Python sources, saved experiment data, and ten report figures. |
-| [`MTH321-Group-E-figures`](MTH321-Group-E-figures/) | A separate collection of PNG/PDF figures covering concentrations, convergence, stiffness, stability, Newton tolerances, adaptivity, cost, and diagnostics. |
+\[
+-\Delta u=f\quad\text{on }(0,1)^2.
+\]
 
-**Reproduction entry point:** use [`MTH321-Group-E-visualization-report/Robertson_figures_code`](MTH321-Group-E-visualization-report/Robertson_figures_code/), which contains the model, solvers, experiment drivers, requirements file, and plotting scripts.
+The left, bottom, and top edges, including all four corners, are Dirichlet-owned. The open right edge has either
 
-**Completeness note:** the supplied `Algorithm-Implementation` directory does not include the `robertson` package imported by its wrapper and tests. That component cannot run independently as supplied. The report package and the testing-validation package each contain their own solver implementations; their test results and output formats should be interpreted separately.
+\[
+\partial_n u=q\quad\text{or}\quad \partial_n u+\beta u=r.
+\]
 
-## Problem Formulation
+The manufactured data are centralised in `code/mixed_bvp/data.py`:
 
-The Robertson system is
+- `u_exact=exp(x+y)` and `f=-2*exp(x+y)`;
+- `q(y)=exp(1+y)`;
+- `beta=2` and `r=q+beta*u_exact=3*exp(1+y)`.
 
-$$
-\begin{aligned}
-\frac{dy_1}{dt} &= -0.04y_1 + 10^4y_2y_3, \\
-\frac{dy_2}{dt} &= 0.04y_1 - 10^4y_2y_3 - 3\times10^7y_2^2, \\
-\frac{dy_3}{dt} &= 3\times10^7y_2^2,
-\end{aligned}
-$$
+`CoreData` keeps the forcing, Dirichlet data, Neumann/Robin data, exact solution, and Robin parameter separate from mesh construction and assembly. A subclass or replacement data object can change the physics without changing `assemble_core`. The highlighted model has unit diffusion, so no unnecessary variable-coefficient abstraction is introduced.
 
-with initial condition $\mathbf{y}(0)=(1,0,0)^T$ and integration interval $0\leq t\leq40$.
-
-The total concentration satisfies
-
-$$
-y_1(t)+y_2(t)+y_3(t)=1.
-$$
-
-The widely separated decay time scales make the system stiff. Eliminating $y_3=1-y_1-y_2$ gives a two-dimensional system for stiffness analysis. The structural zero eigenvalue associated with conservation is excluded from the stiffness ratio; the ratio is evaluated where both relevant decay modes are nonzero.
-
-## Numerical Methods and Experiments
-
-| Method | Role in the study |
-| --- | --- |
-| Explicit Euler (EE) | First-order explicit baseline and investigation of stability-limited step sizes. |
-| Classical RK4 | Fourth-order explicit method, used to study accuracy and stability restrictions. |
-| Implicit Euler (IE) | First-order implicit method with nonlinear equations solved by Newton iteration. |
-| Adaptive implicit Euler | Step-doubling error estimation and step-size control. |
-| SciPy Radau and BDF | Reference calculations and production-solver comparisons. The independent validation package also uses LSODA for reference cross-checks. |
-
-The experiments examine:
-
-- Full and reduced Jacobians, eigenvalue histories, and stiffness ratios.
-- Stability regions, explicit-method step-size thresholds, and failure behavior.
-- Convergence on the Robertson and Prothero-Robinson problems.
-- Newton tolerance sensitivity, conservation defects, and non-negativity.
-- Adaptive step sizes, accepted/rejected steps, and tolerance sensitivity.
-- Work-precision curves and runtime comparisons at matched endpoint errors.
-
-## Reproduce the Report Figures
-
-Use **Python 3.10 or newer**. The report package declares `numpy>=1.26`, `scipy>=1.11`, and `matplotlib>=3.8` in its requirements file.
-
-Starting from the repository root:
+A minimal direct solve is:
 
 ```bash
-cd MTH321-Group-E-visualization-report/Robertson_figures_code
-python -m pip install -r code/requirements.txt
+PYTHONPATH=code python - <<'PY'
+from mixed_bvp.core import assemble_core
+from mixed_bvp.solvers import solve_direct
 
-# Rebuild Figures 1 and 3-9 from the supplied experiment data.
-python code/make_figures.py
-
-# Rebuild Figure 2 and Figure 10.
-python code/make_figures_supplementary.py
+system = assemble_core(16, "neumann", "ghost")
+result = solve_direct(system.A, system.b, system.row_kind)
+print(result.converged, result.residuals["scaled_relative_inf"])
+PY
 ```
 
-To recompute the experiment data and then regenerate all figures, run the following from the same package directory:
+## 2. Environment
+
+The recorded full run used Python 3.12.12 and the exact package versions in `requirements.txt`.
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Required packages are NumPy, SciPy, pandas, Matplotlib, and scikit-fem. PyAMG is not required: Jacobi, red-black Gauss–Seidel, and red-black SOR are implemented directly in `code/mixed_bvp/solvers.py`.
+
+## 3. Reproduce every result and figure
+
+Run from the extracted project root:
 
 ```bash
 python code/run_all.py
-python code/make_figures.py
-python code/make_figures_supplementary.py
 ```
 
-`run_all.py` writes experiment arrays and `summary.json` to the package's `results/` directory. Plotting scripts write to its `figures/` directory. Figures 1-9 are supplied as PNG and PDF; Figure 10, `fig_matchedcost`, is PNG only.
+The full driver runs E1–E6 and regenerates:
 
-The supplementary script recomputes Figure 2 using a separate 100-fold tolerance refinement, from `(rtol, atol) = (1e-10, 1e-12)` to `(1e-12, 1e-14)`. For Figure 10, it uses stored benchmark timings by default. To measure timings on the current machine instead:
+- all numerical tables in `results/*.csv`;
+- all 21 figures in `figures/*.png`;
+- software versions, command scope, experiment list, and prediction-file hash in `results/run_manifest.json`.
+
+The formal manifest must contain all six experiments and `quick=false`. Wall times depend on hardware, BLAS/LAPACK, and concurrent load; iteration counts, matrix structure, residuals, errors, and fitted orders are the portable numerical evidence.
+
+A smaller smoke run and selective drivers are available for debugging:
 
 ```bash
-python code/make_figures_supplementary.py --rerun
+python code/run_all.py --quick
+python code/run_all.py --experiments E1 E3
+python code/run_all.py --experiments E2
 ```
 
-Runtime measurements depend on the machine, software environment, and benchmark protocol.
+Quick and selective runs overwrite the same output folders. They are not formal evidence; rerun the full command before using the outputs for assessment.
 
-## Validation
-
-From the report package directory, run its checks with:
+## 4. Run the tests
 
 ```bash
-python code/validation_tests.py
+PYTHONPATH=code python -m unittest discover -s code/tests -v
 ```
 
-These checks cover the conservation identity, analytic Jacobian, Newton solver, convergence orders, numerical conservation, Radau agreement, stiffness diagnostics, and adaptive tolerance refinement.
+The 22 tests check:
 
-The separate testing-validation package has its own implementation and experiment pipeline. With the same scientific Python dependencies installed, run it from the **repository root**:
+- five-point and boundary-row coefficients, RHS signs, and corner ownership;
+- independent exact local residuals and representative convergence;
+- red-black colouring, stationary-solver agreement, and small-mesh spectral radii;
+- tolerance-sweep forward error, error stagnation, and midpoint-QoI stagnation;
+- P1 linear reproduction, common-node ordering, and scaled FDM/P1 stiffness equivalence;
+- L-shaped geometry, singular traces, maximum-principle behaviour, and finite corner integration;
+- radial polygon geometry and the pure-Neumann nullspace, compatibility correction, and mean gauge.
 
-```bash
-python MTH321-Group-E-testing-validation/code/validation/run_all.py
-```
+## 5. Explicit indexing and sparse assembly
 
-Its generated figures are written to `MTH321-Group-E-testing-validation/figures/validation/`, and results are printed to the console. The supplied [`run_all_output.txt`](MTH321-Group-E-testing-validation/figures/validation/run_all_output.txt) records **8/8 validation tests passing and 5/5 pipeline stages completing** for that saved run. This is evidence for the independent validation implementation, not a claim that every test in the repository has passed. Inspect the printed PASS/FAIL results when rerunning the pipeline.
+The core unknowns are `(i,j)` for `1<=i<=N` and `1<=j<=N-1`, giving exactly `N(N-1)` unknowns. The zero-based matrix map is implemented explicitly as
 
-## Reference Data and Output Formats
+\[
+k=(j-1)N+(i-1).
+\]
 
-The report package constructs a Radau reference solution using `rtol=1e-12` and `atol=1e-14`, then compares it with a tighter run using `rtol=1e-13` and `atol=1e-15`. The output grid contains `t=0` plus 241 logarithmically spaced times from `1e-8` to `40`.
+Right corners never receive a natural-boundary row. Interior rows use the positive `-Delta` five-point stencil. Dirichlet neighbours are strongly eliminated with `b_k <- b_k-a_kl*g_l`, which gives the `+g/h^2` contribution for a standard neighbour.
 
-The saved report data use the following layouts:
+Assembly constructs every coefficient in COO format and converts to CSR before solution. Production solves do not densify the matrix. Dense iteration matrices and eigenspectra occur only in explicitly labelled small-mesh diagnostics.
 
-| File | Contents |
-| --- | --- |
-| `results/reference.npz` | `t` with shape `(242,)` and `y` with shape `(3, 242)`. |
-| `results/eig.npz` | Output times and eigenvalue-magnitude/stiffness histories: `t`, `lmax`, `lmin`, and `S`. |
-| `results/adaptive_*.npz` | Accepted times `t`, states `y`, step sizes `h`, and error estimates `err`. |
-| `results/cons_*.npz` | Times `t` and concentration-sum defects `defect`. |
-| `results/summary.json` | Reference values, experiment summaries, errors, diagnostics, and timing data. |
+## 6. Solver and verification conventions
 
-These paths are relative to `MTH321-Group-E-visualization-report/Robertson_figures_code/`.
+### Algebraic residuals
 
-The [Algorithm-Implementation README](MTH321-Group-E-Algorithm-Implementation/README.md) separately specifies a team interchange format with `t_ref`, `y_ref` of shape `(N, 3)`, and optional JSON metadata. It also describes experiment manifests and sample/history exports. This specification is distinct from the saved report-package format above; files should not be treated as interchangeable without converting their keys and array orientation.
+For `s_i=sum_j |A_ij|`, the primary iterative stopping metric is
 
-Reference refinement and cross-solver agreement provide consistency checks, not rigorous error bounds. Structural file checks alone do not establish scientific accuracy.
+\[
+\rho_{\mathrm{scal}}=
+\frac{\|D_s^{-1}(b-Ax)\|_\infty}
+{\|D_s^{-1}b\|_\infty}.
+\]
 
-## Main Findings
+Iterate differences are diagnostic only. Direct solves additionally record componentwise backward error, conditioning/fill diagnostics, and a tight row-scaled GMRES cross-check. Conjugate gradients are not applied to the nonsymmetric mixed-boundary core matrices.
 
-The supplied [report](MTH321-Group-E-visualization-report/Robertson_ODE_Report_TeamE.pdf), [saved experiment summary](MTH321-Group-E-visualization-report/Robertson_figures_code/results/summary.json), and validation materials support the following observations:
+### Forward accuracy and stagnation
 
-- The reference endpoint is approximately $\mathbf{y}(40)=(0.7158270687,\;9.185534765\times10^{-6},\;0.2841637457)^T$.
-- The stiffness ratio near $t=40$ is approximately $1.58\times10^5$.
-- Frozen-Jacobian analysis suggests explicit step-size limits of about $5.9\times10^{-4}$ for EE and $8.2\times10^{-4}$ for RK4. These are local stability estimates, not guarantees for the nonlinear problem.
-- Implicit Euler can remain stable at larger step sizes, but its first-order accuracy and Newton cost still matter. In the report's four matched-error timing comparisons, IE took about **5.16-5.25 times as long as EE** for the tested implementation and benchmark environment.
-- Conservation, non-negativity, boundedness, and accuracy are separate diagnostics. Preserving the concentration sum alone does not demonstrate an accurate solution.
+A small residual alone is not accepted as proof of forward accuracy. E2 measures
 
-## Team
+\[
+\eta_{\mathrm{alg}}=
+\frac{\|x_{\mathrm{iter}}-x_{\mathrm{direct}}\|_\infty}
+{E_{\mathrm{direct},\infty}}.
+\]
 
-| Member | Responsibility |
-| --- | --- |
-| Yi Zhu | Project Manager |
-| Zhengdao Song | Mathematical Theory |
-| Fangchi Shi | Algorithm Implementation |
-| Xiangyu Zhang | Visualization and Report |
-| Rong Yin | Testing and Validation |
+At every tolerance it also records `L2h`, `Linf`, and the physical quantity of interest `u_h(1,1/2)`. Successive changes in these errors and the QoI are normalised by the corresponding direct-solve discretisation-error scales. A reporting tolerance is selected only when both conditions hold:
 
-For a guided reading path, start with the mathematical derivation, read the final report, and then consult the reproduction package and validation materials for the supporting code and numerical evidence.
+1. forward algebraic error is at most 1% of direct discretisation error;
+2. every successive `L2h`, `Linf`, and QoI change is at most 1% of its direct error scale.
+
+The loosest first tolerance cannot pass the stagnation gate because it has no predecessor. `E2_accuracy_target_summary.csv` records the selected tolerance, scaled residual, iterations, cost, and both gates. Baseline common-residual cost and matched dual-gate cost are deliberately separate outputs.
+
+### Error norms and observed orders
+
+`code/mixed_bvp/metrics.py` defines all norms in one place:
+
+- `L2h=sqrt(h^2*sum(e_k^2))` on the declared unknown set;
+- `Linf=max|e_k|`;
+- separate interior and right-edge norms;
+- `L2gamma_right=sqrt(h*sum_right(e_k^2))` as a line norm, not an area norm;
+- discrete energy error from unique active east/north edge differences of numerical error.
+
+Refinement tables contain at least four meshes. Observed orders include pairwise rates and last-three-level log-log fits with `R2`, fit levels, and maximum natural-log deviation. Refinement figures state the fitted order and fit deviation rather than relying only on nominal reference slopes.
+
+## 7. Experiment map
+
+| Experiment | Purpose | Main outputs |
+|---|---|---|
+| E1 | Neumann/Robin data with one-sided and ghost-point closures on four meshes | `E1_core_convergence.csv`, `E1_asymptotic_fits.csv`, matrix and independent local-row audits |
+| E2 | Sparse SuperLU versus Jacobi, red-black Gauss–Seidel, and red-black SOR | `E2_solver_comparison.csv`, `E2_accuracy_target_sweep.csv`, `E2_accuracy_target_summary.csv`, matched cost and stagnation figures |
+| E3 | Separate matched 2D five-point FDM/P1-FEM Dirichlet benchmark | `E3_matched_FDM_FEM.csv`, `E3_stencil_equivalence.csv`, common-node errors, costs, and sparsity |
+| E4 | Smooth versus re-entrant-singular harmonic solutions on the L-shaped domain | `E4_Lshape_smooth_vs_singular.csv`, `E4_asymptotic_fits.csv`, error maps |
+| E5 | Uniform, red-graded, and radially graded P1 FEM for the singular solution | `E5_graded_mesh_convergence.csv`, `E5_error_vs_dof_fits.csv`, mesh-quality evidence |
+| E6 | Pure-Neumann compatibility correction, constant nullspace, and mean gauge | `E6_pure_Neumann_audit.csv`, `E6_small_mesh_nullspace.csv` |
+
+The matched FDM/FEM study is intentionally a separate pure-Dirichlet benchmark so that different boundary formulations cannot be mistaken for an FDM-versus-FEM effect. The L-shaped smooth control distinguishes solver failure from regularity-induced rate loss. Grading results are assessed against actual DOFs and mesh quality, not only an outer mesh parameter.
+
+## 8. Code architecture
+
+- `code/mixed_bvp/data.py`: swappable exact solutions, forcing, and boundary data.
+- `code/mixed_bvp/core.py`: explicit index map, COO/CSR assembly, strong Dirichlet elimination, and matrix audits.
+- `code/mixed_bvp/solvers.py`: SuperLU, Jacobi, red-black Gauss–Seidel/SOR, fill/conditioning diagnostics, and GMRES cross-check.
+- `code/mixed_bvp/metrics.py`: residuals, backward error, named norms, order fits, and discrete energy error.
+- `code/mixed_bvp/verification.py`: independent exact local residuals and corner/index audits.
+- `code/mixed_bvp/dirichlet.py`: aligned square and L-shaped FDM grids.
+- `code/mixed_bvp/fem.py`: real 2D P1 meshes, solves, graded families, and smooth/singular error integration.
+- `code/mixed_bvp/pure_neumann.py`: compatibility correction and mean-gauged saddle-point solve.
+- `code/mixed_bvp/experiments/`: separated E1–E6 protocols and shared output utilities.
+- `code/run_all.py`: complete reproduction entry point and manifest writer.
+
+Assembly, solution, and verification are separate functions. Geometry, physical data, solver tolerances, and experiment selection are not hard-coded together.
+
+## 9. Code-facing documentation and audits
+
+- `docs/Precomputation_Predictions.md`: unchanged hypothesis record hashed by the full driver.
+- `docs/Code_Review_and_Five_Gate_Audit.md`: checklist findings, resolutions, viva code map, and the exact transcription, structure-and-indexing, linearisation, independent-reproduction, and interrogation gates.
+- `docs/Implementation_and_Library_Boundary.md`: direct implementation versus justified library delegation.
+- `docs/AI_Transparency_Log.md`: substantive AI-assisted code changes, reasons, and independent evidence.
+- `results/reproduction_audit.json`: clean-extraction full-run and deterministic-result comparison, generated after the final reproduction.
+
+No personal commit history, meeting record, human external review, or teammate contribution is invented in these records.

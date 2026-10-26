@@ -1,0 +1,3 @@
+N,smallest_absolute_eigenvalue,second_smallest_eigenvalue,zero_eigenvalue_count_at_1e-10
+4,8.173429647676e-16,2.957440166067e-01,1
+8,4.665902165361e-16,1.060425977513e-01,1

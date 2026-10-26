@@ -1,0 +1,9 @@
+variant,closure,metric,order,R2,max_log_deviation,fit_Ns
+neumann,ghost,pde_local_residual_inf,1.932461753162e+00,9.999548571166e-01,1.039226439024e-02,"[16, 32, 64]"
+neumann,ghost,boundary_local_residual_inf,9.490762207025e-01,9.998926844628e-01,7.869561396149e-03,"[16, 32, 64]"
+neumann,one_sided,pde_local_residual_inf,1.932461753162e+00,9.999548571166e-01,1.039226439024e-02,"[16, 32, 64]"
+neumann,one_sided,boundary_local_residual_inf,9.549889443774e-01,9.999179432534e-01,6.924176654601e-03,"[16, 32, 64]"
+robin,ghost,pde_local_residual_inf,1.932461753162e+00,9.999548571166e-01,1.039226439024e-02,"[16, 32, 64]"
+robin,ghost,boundary_local_residual_inf,9.490762205628e-01,9.998926844643e-01,7.869561339890e-03,"[16, 32, 64]"
+robin,one_sided,pde_local_residual_inf,1.932461753162e+00,9.999548571166e-01,1.039226439024e-02,"[16, 32, 64]"
+robin,one_sided,boundary_local_residual_inf,9.549889443773e-01,9.999179432534e-01,6.924176654485e-03,"[16, 32, 64]"
