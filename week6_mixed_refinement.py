@@ -145,7 +145,15 @@ def scaled_residual(A, b, u):
 
 
 def asymmetry(A):
-    return spla.norm(A - A.T, np.inf) / spla.norm(A, np.inf)
+    """Relative Frobenius asymmetry ||A - A^T||_F / ||A||_F.
+
+    Definition shared with the Algorithm branch (their core.py), so the
+    two reports quote one number.  On the N=64 ghost-Neumann matrix this
+    gives ~0.039; the inf-norm ratio we used earlier gave ~0.125 purely
+    because the norm choice inflates single-row entries.
+    """
+    d = A - A.T
+    return np.sqrt(d.power(2).sum() / A.power(2).sum())
 
 
 def observed_order(errs):
@@ -181,7 +189,7 @@ if __name__ == "__main__":
     # --- matrix structure evidence (one representative case) ---
     print("\n### matrix structure, N=64, ghost Neumann ###")
     U, A, b, dof, tag, _ = solve_mixed(64, "neumann", "ghost")
-    print(f"  nnz = {A.nnz},  ||A - A^T||/||A|| (inf) = {asymmetry(A):.3e}")
+    print(f"  nnz = {A.nnz},  ||A - A^T||_F/||A||_F = {asymmetry(A):.3e}")
     U, A, b, dof, tag, _ = solve_mixed(64, "neumann", "first")
     print(f"  same quantity, first-order closure = {asymmetry(A):.3e}")
 

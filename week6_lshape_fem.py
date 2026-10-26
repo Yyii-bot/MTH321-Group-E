@@ -19,7 +19,8 @@ regularity, so Aubin-Nitsche only buys about one more h^{2/3}.
 Things this script checks beyond the bare rates:
   * the branch convention (already unit-tested in week5, used again here)
   * quadrature is accurate enough that it does not pollute the measured
-    errors near the singular corner (composite-rule comparison)
+    errors near the singular corner (self-check: L2 at Duffy n=8 vs n=6,
+    plus the adaptive quad's own error estimate on the corner elements)
   * rates are reported against h AND against N_dof (the fair comparison
     for the later adaptive study)
 
@@ -29,6 +30,7 @@ import time
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+from numpy.polynomial.legendre import leggauss
 
 # reuse the verified analytic functions from Week 5
 from week5_verify_analytic import ustar_lshape, grad_ustar_lshape
@@ -77,6 +79,15 @@ def build_mesh(n):
     interior[:, 0] = interior[:, -1] = False
     interior[1:-1, 1:-1] &= kept[1:-1, 1:-1] & kept[:-2, 1:-1] & kept[2:, 1:-1] \
                             & kept[1:-1, :-2] & kept[1:-1, 2:]
+    # the re-entrant corner (0,0) lies on the two cut edges, where the
+    # exact solution has zero trace -- it is a Dirichlet node, not a free
+    # unknown.  (Leaving it free was a real modelling slip: the discrete
+    # corner value came out ~0.29 on coarse meshes, while the Algorithm
+    # branch fixes it to 0; their analytic corner integral also assumes
+    # u_h(corner) = 0.)  n is always even here, so x = 0 is a grid line.
+    i0 = np.nonzero(xs == 0.0)[0]
+    if len(i0):
+        interior[i0[0], i0[0]] = False
     return xy, tris, interior[kept], h
 
 
@@ -104,82 +115,194 @@ def assemble(xy, tris):
 # ----------------------------------------------------------------------
 # error measurement.  The integrands are singular at the corner
 # (u* ~ r^{2/3}, grad u* ~ r^{-1/3}), so the quadrature order is a real
-# concern, not a formality: a plain 3-point rule mis-measures the L2 norm
-# by ~50% near the corner.  We therefore integrate on composite rules
-# (each triangle split into 4^k subtriangles, 3-point on each) and check
-# one level against the next before trusting a number.
+# concern, not a formality.  Final protocol (revision 3, same measuring
+# stick as the Algorithm branch's E5 table):
+#   * elements with a vertex at the corner: exact radial / adaptive
+#     angular integral (_singular_corner_integral, ported from their
+#     fem_impl);
+#   * all other elements: L2 by Duffy-transform tensor Gauss at n=8
+#     (their intorder=8), energy by the 3-point edge-midpoint rule,
+#     whose points never touch the corner and which integrates the
+#     squared-gradient terms exactly where the integrand is smooth.
+# Revision 2 used composite 3-point refinement with a 3-vs-4-level
+# check; the check passed while the absolute values sat ~7x above the
+# certified numbers -- two quadratures can agree with each other and
+# both be wrong -- which is why the measuring stick was switched.
 # ----------------------------------------------------------------------
-def refine_once(xy, tris, uh):
-    """Split every triangle into 4 via edge midpoints.  Midpoint values of
-    a P1 function are exact averages, so u_h is preserved."""
-    mids, mid_vals, new_nodes = {}, [], []
-    def mid(a, b):
-        key = (min(a, b), max(a, b))
-        if key not in mids:
-            mids[key] = len(xy) + len(new_nodes)
-            new_nodes.append(0.5 * (xy[a] + xy[b]))
-            mid_vals.append(0.5 * (uh[a] + uh[b]))
-        return mids[key]
-    sub = []
-    for t in tris:
-        a, b, c = t
-        ab, bc, ca = mid(a, b), mid(b, c), mid(c, a)
-        sub += [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]]
-    return np.vstack([xy, np.array(new_nodes)]), np.array(sub), \
-        np.concatenate([uh, np.array(mid_vals)])
+
+# 1D Gauss-Legendre nodes/weights on [-1,1].  Rules up to n=3 are
+# tabulated; higher orders are generated on first use.
+_GAUSS = {1: ([0.0], [2.0]),
+          2: ([-0.5773502691896257, 0.5773502691896257], [1.0, 1.0]),
+          3: ([-0.7745966692414834, 0.0, 0.7745966692414834], [5.0 / 9, 8.0 / 9, 5.0 / 9])}
 
 
-def _integrate_3pt(xy, tris, uh):
-    """Plain 3-point quadrature of the L2 and energy errors on one
-    (possibly refined) triangle list."""
-    l2_sq, h1_sq = 0.0, 0.0
+def _gauss_rule(n):
+    if n not in _GAUSS:
+        x, w = leggauss(n)
+        _GAUSS[n] = (list(x), list(w))
+    return _GAUSS[n]
+
+
+def _affine_gradient(vertices, nodal_values):
+    """Gradient of the P1 function on one triangle (constant per element).
+    Ported from the Algorithm branch's fem_impl._affine_gradient."""
+    v0, v1, v2 = vertices
+    det = ((v1[0] - v0[0]) * (v2[1] - v0[1])
+           - (v2[0] - v0[0]) * (v1[1] - v0[1]))
+    shape_gradients = np.array((
+        ((v1[1] - v2[1]) / det, (v2[0] - v1[0]) / det),
+        ((v2[1] - v0[1]) / det, (v0[0] - v2[0]) / det),
+        ((v0[1] - v1[1]) / det, (v1[0] - v0[0]) / det),
+    ))
+    return np.sum(nodal_values[:, None] * shape_gradients, axis=0)
+
+
+def _corner_theta(x, y):
+    """Angular coordinate on the week5 branch convention (phi in
+    [0, 3pi/2]); equivalent to the Algorithm branch's singular_angle.
+    The corner elements of our mesh never cross the branch cut after
+    this shift, so plain ordering of the two corner-edge angles is safe."""
+    theta = np.arctan2(y, x)
+    return np.where(theta < np.pi / 2, theta + 2.0 * np.pi, theta)
+
+
+def _singular_corner_integral(vertices, nodal_values, need_h1=False,
+                              epsabs=1e-13, epsrel=1e-11):
+    """Exact radial integration of int (u_h - u*)^2 (and, optionally, the
+    energy integrand) on a triangle with a vertex AT the re-entrant
+    corner, for u* = r^lambda sin(lambda phi), lambda = 2/3.
+
+    The corner nodal value is zero, so u_h = r (G.e_r) with G the affine
+    gradient; every radial integral of (u_h - u*)^2 is then analytic and
+    only a smooth one-dimensional angular integral remains, handled by
+    scipy.integrate.quad with an error estimate we report.  Ported from
+    the Algorithm branch's fem_impl._singular_corner_integral
+    (their certified corner route, which their E5 table is measured
+    with); _corner_theta matches their singular_angle.
+    """
+    from scipy.integrate import quad
+
+    radii = np.linalg.norm(vertices, axis=1)
+    corner = int(np.argmin(radii))
+    if radii[corner] > 1e-12 or abs(nodal_values[corner]) > 1e-12:
+        raise ValueError("corner integral requires a zero corner value")
+    other = [i for i in range(3) if i != corner]
+    v1, v2 = vertices[other]
+    theta = _corner_theta(vertices[other, 0], vertices[other, 1])
+    if theta[0] > theta[1]:
+        v1, v2 = v2, v1
+        theta = theta[::-1]
+    theta0, theta1 = float(theta[0]), float(theta[1])
+    # edge opposite the corner: normal.x = constant; R(theta) is where
+    # the ray from the corner meets that edge
+    normal = np.array((v2[1] - v1[1], v1[0] - v2[0]))
+    constant = float(normal @ v1)
+    middle = 0.5 * (theta0 + theta1)
+    if constant / (normal @ np.array((np.cos(middle), np.sin(middle)))) < 0.0:
+        normal, constant = -normal, -constant
+
+    G = _affine_gradient(vertices, nodal_values)
+    lam = 2.0 / 3.0
+    G2 = float(G @ G)
+
+    def quantities(theta):
+        c, s = np.cos(theta), np.sin(theta)
+        er = np.array((c, s))
+        et = np.array((-s, c))
+        R = constant / (normal @ er)
+        phi = theta - np.pi / 2.0
+        sl, cl = np.sin(lam * phi), np.cos(lam * phi)
+        return R, float(G @ er), float(G @ et), sl, cl
+
+    # int_0^R (r Ge - r^lam sl)^2 r dr, expanded term by term
+    def l2_integrand(theta):
+        R, Ge, _, sl, _ = quantities(theta)
+        return (Ge**2 * R**4 / 4.0
+                - 2.0 * Ge * sl * R**(lam + 3.0) / (lam + 3.0)
+                + sl**2 * R**(2.0 * lam + 2.0) / (2.0 * lam + 2.0))
+
+    l2, err_l2 = quad(l2_integrand, theta0, theta1,
+                      epsabs=epsabs, epsrel=epsrel, limit=200)
+    h1, err_h1 = 0.0, 0.0
+    if need_h1:
+        # int_0^R |G - lam r^(lam-1)(sl er + cl et)|^2 r dr; the exact
+        # gradient is never evaluated at the corner itself
+        def h1_integrand(theta):
+            R, Ge, Gt, sl, cl = quantities(theta)
+            cross = Ge * sl + Gt * cl
+            return (G2 * R**2 / 2.0
+                    - 2.0 * lam * cross * R**(lam + 1.0) / (lam + 1.0)
+                    + lam**2 * R**(2.0 * lam) / (2.0 * lam))
+        h1, err_h1 = quad(h1_integrand, theta0, theta1,
+                          epsabs=epsabs, epsrel=epsrel, limit=200)
+    return l2, h1, err_l2 + err_h1
+
+
+def _l2_duffy_core(xy, tris, uh, ue, n):
+    """int (u_h - ue)^2 by Duffy-transform tensor Gauss at order n.
+    Only used AWAY from the corner, where the integrand is smooth."""
+    p0, p1, p2 = xy[tris[:, 0]], xy[tris[:, 1]], xy[tris[:, 2]]
+    det = (p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1]) \
+          - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1])
+    uh0, uh1, uh2 = uh[tris[:, 0]], uh[tris[:, 1]], uh[tris[:, 2]]
+    total = 0.0
+    for s, ws in zip(*_gauss_rule(n)):
+        for t, wt in zip(*_gauss_rule(n)):
+            lam0 = 0.5 * (1 + s)
+            lam1 = 0.25 * (1 - s) * (1 + t)
+            lam2 = 0.25 * (1 - s) * (1 - t)
+            wgt = abs(det) / 8.0 * (1 - s) * ws * wt
+            qx = lam0 * p0[:, 0] + lam1 * p1[:, 0] + lam2 * p2[:, 0]
+            qy = lam0 * p0[:, 1] + lam1 * p1[:, 1] + lam2 * p2[:, 1]
+            uh_q = lam0 * uh0 + lam1 * uh1 + lam2 * uh2
+            e = uh_q - ue(qx, qy)
+            total += np.sum(wgt * e**2)
+    return total
+
+
+def _h1_midpoint_sq(xy, tris, uh, grad_ue):
+    """int |grad(u_h - ue)|^2 by the 3-point edge-midpoint rule.
+    grad u_h is piecewise constant; the quadrature points are edge
+    midpoints, which never touch the re-entrant corner."""
     p0, p1, p2 = xy[tris[:, 0]], xy[tris[:, 1]], xy[tris[:, 2]]
     area = 0.5 * np.abs((p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1])
                         - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1]))
-    # 3-point rule (degree 2 exact) on each triangle
     qpts = [0.5 * (p0 + p1), 0.5 * (p1 + p2), 0.5 * (p2 + p0)]
-    # grad of u_h is piecewise constant per triangle
     dlam0x = (p1[:, 1] - p2[:, 1]) / (2 * area); dlam0y = (p2[:, 0] - p1[:, 0]) / (2 * area)
     dlam1x = (p2[:, 1] - p0[:, 1]) / (2 * area); dlam1y = (p0[:, 0] - p2[:, 0]) / (2 * area)
     gh_x = dlam0x * uh[tris[:, 0]] + dlam1x * uh[tris[:, 1]] - (dlam0x + dlam1x) * uh[tris[:, 2]]
     gh_y = dlam0y * uh[tris[:, 0]] + dlam1y * uh[tris[:, 1]] - (dlam0y + dlam1y) * uh[tris[:, 2]]
+    h1_sq = 0.0
     for qp in qpts:
-        lam0 = ((qp[:, 0] - p1[:, 0]) * (p2[:, 1] - p1[:, 1])
-                - (p2[:, 0] - p1[:, 0]) * (qp[:, 1] - p1[:, 1])) / (2 * area)
-        lam1 = ((qp[:, 0] - p2[:, 0]) * (p0[:, 1] - p2[:, 1])
-                - (p0[:, 0] - p2[:, 0]) * (qp[:, 1] - p2[:, 1])) / (2 * area)
-        lam2 = 1.0 - lam0 - lam1
-        uh_q = lam0 * uh[tris[:, 0]] + lam1 * uh[tris[:, 1]] + lam2 * uh[tris[:, 2]]
-        ue_q = ustar_lshape(qp[:, 0], qp[:, 1])
-        l2_sq += np.sum(area / 3.0 * (uh_q - ue_q) ** 2)
-        g = grad_ustar_lshape(qp[:, 0], qp[:, 1])
-        h1_sq += np.sum(area / 3.0 * ((gh_x - g[0]) ** 2 + (gh_y - g[1]) ** 2))
-    return np.sqrt(l2_sq), np.sqrt(h1_sq)
+        g = grad_ue(qp[:, 0], qp[:, 1])
+        h1_sq += np.sum(area / 3.0 * ((gh_x - g[0])**2 + (gh_y - g[1])**2))
+    return h1_sq
 
 
-def integrate_errors(xy, tris, uh, base=1, corner=4, radius=0.5, mask=None):
-    """Errors with corner-aware composite quadrature.
+def integrate_errors(xy, tris, uh, n_duffy=8, mask=None):
+    """L2 and energy errors with the corner-aware protocol above.
 
-    The integrands (u*-u_h)^2 and |grad(u*-u_h)|^2 are singular at the
-    re-entrant corner, and most of the L2 error lives there.  Triangles
-    within `radius` of the corner get `corner` levels of 4-way subdivision,
-    the rest get `base`.  Subsets are refined and integrated independently,
-    which is fine for integration even where refinement levels differ
-    across a shared edge.  `mask` optionally restricts to a triangle subset.
+    Returns (L2, energy, corner_quad_abs_err): the exact corner
+    integrals contribute the third component's error estimate, the
+    Duffy / midpoint parts are exact to machine precision for these
+    integrands.  `mask` optionally restricts to a triangle subset.
     """
     if mask is not None:
         tris = tris[mask]
-    dmin = np.abs(xy[tris]).min(axis=(1, 2))      # nearest vertex to the corner
-    levels = np.where(dmin < radius, corner, base)
-    l2_sq, h1_sq = 0.0, 0.0
-    for lv in np.unique(levels):
-        xyl, tsl, uhl = xy, tris[levels == lv], uh
-        for _ in range(int(lv)):
-            xyl, tsl, uhl = refine_once(xyl, tsl, uhl)
-        a, b = _integrate_3pt(xyl, tsl, uhl)
-        l2_sq += a * a
-        h1_sq += b * b
-    return np.sqrt(l2_sq), np.sqrt(h1_sq)
+    rad = np.linalg.norm(xy[tris], axis=2)
+    is_corner = rad.min(axis=1) < 1e-12
+    l2_sq, h1_sq, quad_err = 0.0, 0.0, 0.0
+    for t in tris[is_corner]:
+        a, b, e = _singular_corner_integral(xy[t], uh[t], need_h1=True)
+        l2_sq += a
+        h1_sq += b
+        quad_err += e
+    tris = tris[~is_corner]
+    if len(tris):
+        l2_sq += _l2_duffy_core(xy, tris, uh, ustar_lshape, n_duffy)
+        h1_sq += _h1_midpoint_sq(xy, tris, uh, grad_ustar_lshape)
+    return np.sqrt(l2_sq), np.sqrt(h1_sq), quad_err
 
 
 def solve_level(n):
@@ -194,24 +317,22 @@ def solve_level(n):
 
 
 if __name__ == "__main__":
-    print("| n | h | N_dof | L2 error | energy error | L2 quad check | energy quad check | solve s |")
+    print("| n | h | N_dof | L2 error | energy error | L2 quad check | corner quad rel-err | solve s |")
     print("|---|---|---|---|---|---|---|---|")
     prev = None
     for n in (8, 16, 32, 64, 128):   # add 256 if the rates are not yet stable
         xy, tris, interior, h, uh, t_solve = solve_level(n)
-        # table values: 4 corner levels; check column: 3 vs 4 corner levels
-        # everything within r < 0.5 of the corner is composite-refined;
-        # outside that the integrand is smooth enough for plain 3-point
-        l2, en = integrate_errors(xy, tris, uh, corner=4)
-        l2c, enc = integrate_errors(xy, tris, uh, corner=3)
+        # table L2 at Duffy n=8; check column: n=8 vs n=6 relative difference
+        l2, en, qerr = integrate_errors(xy, tris, uh)
+        l2c, _, _ = integrate_errors(xy, tris, uh, n_duffy=6)
         ndof = interior.sum()
         print(f"| {n} | {h:.4f} | {ndof} | {l2:.4e} | {en:.4e} "
-              f"| {abs(l2-l2c)/l2:.1e} | {abs(en-enc)/en:.1e} | {t_solve:.2f} |")
+              f"| {abs(l2-l2c)/l2:.1e} | {qerr/(l2*l2):.1e} | {t_solve:.2f} |")
 
         # where does the L2 error live? split at r = 0.25 around the corner
         near = np.abs(xy[tris]).min(axis=(1, 2)) < 0.25
-        l2_near, _ = integrate_errors(xy, tris, uh, corner=3, mask=near)
-        l2_far, _ = integrate_errors(xy, tris, uh, mask=~near)
+        l2_near, _, _ = integrate_errors(xy, tris, uh, mask=near)
+        l2_far, _, _ = integrate_errors(xy, tris, uh, mask=~near)
         print(f"    L2 split: corner region (r<0.25) {l2_near:.4e}, "
               f"rest of domain {l2_far:.4e}  ({100*l2_near**2/(l2_near**2+l2_far**2):.0f}% of the squared error is at the corner)")
         if prev:
@@ -226,7 +347,7 @@ if __name__ == "__main__":
     print("Notes for the report:")
     print("  * coarse meshes are NOT in the asymptotic range yet -- that is")
     print("    expected for a singular problem, say so instead of forcing a fit.")
-    print("  * the quad check column should stay small; if it grows on fine")
+    print("  * the quad check columns should stay small; if they grow on fine")
     print("    meshes the corner singularity is polluting the error measurement")
     print("    itself, and the quadrature order must be raised before claiming")
     print("    any rate.")

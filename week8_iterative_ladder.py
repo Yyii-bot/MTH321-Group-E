@@ -228,7 +228,7 @@ if __name__ == "__main__":
         x, k, wall, res, delta, div = run_loop(A, b, update)
         report(f"SOR w={w:.3f}", x, k, wall + setup, res, div)
 
-        # CG: the matrix is nonsymmetric (Week 6: ||A-A^T||/||A|| ~ 0.12),
+        # CG: the matrix is nonsymmetric (Week 6: ||A-A^T||_F/||A||_F ~ 0.04),
         # so this rung is expected to misbehave -- record what it does.
         iters = []
         t0 = time.perf_counter()
@@ -257,9 +257,9 @@ if __name__ == "__main__":
         verdict = (f"{t_dir/(wall+setup):.1f}x faster" if wall + setup < t_dir
                    else f"{(wall+setup)/t_dir:.1f}x slower")
         print(f"| {N} | GMRES+ILU | {wall + setup:.3f} | {len(it_gm)} | {res:.1e} | {err:.2e} | {verdict} |")
+        d = A - A.T   # same Frobenius definition as week6.asymmetry()
         print(f"    [N={N}: ILU setup {setup:.3f}s + GMRES {wall:.3f}s; "
-              f"||A-A^T||/||A|| = "
-              f"{spla.norm(A - A.T, np.inf)/spla.norm(A, np.inf):.2e}]")
+              f"||A-A^T||_F/||A||_F = {np.sqrt(d.power(2).sum()/A.power(2).sum()):.2e}]")
 
     print("[sweeping SOR omega on the mixed system at N=64 first]")
     Um, Am, bm, dofm, tagm, _ = solve_mixed(64, "neumann", "ghost")

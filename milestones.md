@@ -68,8 +68,10 @@ Take-aways for the report:
   global error for the first-order variant.
 - Scaled residuals stay at 1e-15..1e-14 on every mesh (row scaling:
   D_ii = max_j |A_ij|; raw residuals grow like h^-2 and would mislead).
-- ||A - A^T||/||A|| ~ 0.12-0.125 for both closures: nonsymmetric, so CG
-  is unjustified and sparse direct is the honest choice.
+- ||A - A^T||_F/||A||_F = 3.95e-02 (ghost) / 3.93e-02 (first-order) at
+  N=64, Frobenius norm, one shared definition with the Algorithm branch
+  (their E1 CSV carries the same two values): nonsymmetric, so CG is
+  unjustified on paper and sparse direct is the honest choice.
 - Algebraic vs. discretisation error separated on N=128 (ghost Neumann):
   spsolve scaled residual 3.4e-15; GMRES at rtol=1e-8 still shifts the
   Linf error by ~80%, at 1e-12 agrees to 1e-9. The tolerance has to be
@@ -77,21 +79,27 @@ Take-aways for the report:
 
 **L-shape results (uniform refinement, n = 8..128, reference P1 FEM):**
 
-- Energy error: p = 0.64..0.66 vs h (theory 2/3), p = 0.28..0.33 vs
-  N_dof (theory 1/3). Clean match.
+- Energy error: p = 0.64..0.66 vs h (theory 2/3), p = 0.28..0.32 vs
+  N_dof (theory 1/3). Clean match, stable across every correction below.
 - Mesh sanity: total area must equal exactly 3; any partially-cut cell is
   a hard error. The L-shape is represented exactly (cut follows grid lines).
+- N_dof sequence 33 / 161 / 705 / 2945 / 12033, identical to the
+  Algorithm branch's E5 table (this became true only after the
+  corner-node fix below).
 
-> Correction (2026-10-25), recorded per the honesty rule: the L2 numbers
-> first reported this week (~1.0 order) were later found to be
-> quadrature-inflated. The L2 signal (~h^4) is smaller than the O(h^3)
-> quadrature error of any low-order rule applied to e^2 (grad e is O(1)
-> pointwise, so D^3(e^2) = O(1)). Re-measured with the Duffy-transform
-> tensor Gauss integrator (validated against scipy.integrate.dblquad;
-> self-check 1e-5), the L-shape L2 errors are ~3x smaller and the order
-> is 1.25-1.32 rising toward 4/3, not ~1.0. See `results_verified.md`
-> section 4 and `week8_smooth_vs_nonsmooth.py`. Energy numbers were
-> never affected and are unchanged.
+> Corrections (honesty rule), final state 2026-10-27: the L2 numbers
+> first reported this week (~1.0 order) were quadrature-inflated; the
+> second measurement (Duffy tensor Gauss, still a free re-entrant corner
+> node) read 1.25-1.32 with absolute values ~3x the certified ones. Two
+> real defects were then found and fixed: (i) the re-entrant corner is a
+> Dirichlet node -- a free corner node violates the zero trace of u* on
+> the cut edges; (ii) low-order quadrature away from the corner is
+> replaced by Duffy n=8, and the corner elements by the exact
+> radial/adaptive-angular integral ported from the Algorithm branch's
+> fem_impl. Final table: L2 1.31-1.34 vs h (textbook 4/3), absolute
+> values matching the Algorithm branch's E5 to three+ significant figures
+> at identical N_dof. See `results_verified.md` section 4 and audit log
+> items 5, 8, 9.
 
 *Plan for Week 7:* clinic readiness sheet; effectivity-index design for
 the adaptive study; freeze the matched-settings protocol for the four
@@ -156,9 +164,9 @@ reproduction check.
    costs at these 2D sizes. SOR's omega_opt formula is verified on its
    own model problem (270 iters at the theory value vs 310 at the best
    grid point, N=64). The surprise: CG converged on the nonsymmetric
-   matrix (||A-A^T||/||A|| = 0.12) at ~1.7x the SPD iteration count --
-   unjustified in theory, survives mild nonsymmetry in practice, and we
-   say both halves of that sentence.
+   matrix (||A-A^T||_F/||A||_F = 3.95e-02) at ~1.7x the SPD iteration
+   count -- unjustified in theory, survives mild nonsymmetry in practice,
+   and we say both halves of that sentence.
 4. **FDM vs. FEM gate.** The matched-settings gate functions passed their
    demo self-check, but no real FEM numbers have gone through it yet --
    stated honestly, the gate is *ready*, the comparison is *pending* both
@@ -173,21 +181,18 @@ reproduction check.
    into `results_verified.md` (only real numbers, each with its rerun
    command).
 7. **Smooth-vs-nonsmooth, final leg (`week8_smooth_vs_nonsmooth.py`).**
-   Both legs now run from one script on the same reference FEM, the same
-   L-shaped meshes (n = 8..128) and the same error functionals. L2 is
-   measured with a Duffy-transform tensor-Gauss integrator that was
-   validated against `scipy.integrate.dblquad` on a known integral before
-   any error norm was trusted. Measured: smooth leg (u_s = exp(x+y))
-   L2 order 1.70 -> 1.65, energy exactly 1.00; singular leg L2 1.25 ->
-   1.32, energy 0.66. Splitting the smooth-leg error into theta (discrete
-   pollution, exact formula) and rho (interpolation, Duffy-integrated)
-   gives the story: rho decays at exactly 2.00 while theta decays at
-   ~1.55-1.66 and dominates, so even the smooth problem's L2 rate on the
-   L-domain is capped near 5/3 by corner pollution. That retracts and
-   corrects the Week-6 L2 numbers (the old corner-composite rule was
-   quadrature-inflated; energy numbers unchanged and still valid). The
-   quantified ladder 2.0 -> 5/3 -> 4/3 is the content of this depth
-   comparison; it is in results_verified.md section 6.
+   Both legs run from one script on the same reference FEM, the same
+   L-shaped meshes (n = 8..128) and the same error functionals, with the
+   corner-exact + Duffy-n8 integrator shared with week6. Final measured
+   numbers (2026-10-27): smooth leg (u_s = exp(x+y)) L2 order 2.00 flat,
+   energy 1.00; singular leg L2 1.31 -> 1.34, energy 0.64 -> 0.66. The
+   theta/rho split shows rho at exactly 2.00 and theta now also ~2.0
+   (1.89 -> 2.00), an order of magnitude below ||e|| -- with the corner
+   Dirichlet-fixed there is no pollution cap; the earlier "~5/3 cap" was
+   the free-corner-node artifact (audit log item 8), retracted in
+   writing. The content of this depth comparison is the textbook
+   regularity ladder measured with one measuring stick: smooth 2.0/1.0
+   vs singular 4/3/2/3 (L2/energy). In results_verified.md section 6.
 
 *Plan for Week 9:* final audit -- trace every report number back to a
 manufactured check or a refinement table; final residual audit; finish
@@ -208,17 +213,22 @@ Final audit week. Everything on this list was executed, not just planned.
    report -> `results_verified.md` -> table -> script -> command. The
    Ctrl-F pass found one stale sentence in the audit checklist (the
    pre-correction "~1.0" L2 rate); it now carries the correction note
-   pointing at the Duffy re-measurement.
-3. **The smooth-vs-nonsmooth correction landed.** The L2 column for the
-   L-shape was re-measured with the Duffy + tensor-Gauss integrator and
-   the theta/rho decomposition is in. Final quoted ladder: 2.0
-   (interpolation) -> 5/3 (smooth FEM, measured 1.65-1.70) -> 4/3
-   (singular FEM, measured 1.25-1.32 and rising). Recorded in
-   `results_verified.md` section 6 and in the audit log as items 5-6.
+   pointing at the re-measurement history.
+3. **The L-shape corrections landed (final pass 2026-10-27).** After the
+   corner-node fix and the corner-exact + Duffy-n8 integrator, the L2
+   column reads 1.31-1.34 vs h (textbook 4/3) and reproduces the
+   Algorithm branch's E5 table to three+ significant figures at identical
+   N_dof (161/705/2945/12033). The smooth leg of the depth comparison
+   moved to a flat 2.00 with theta ~ 2.0 -- the old "5/3 pollution cap"
+   is retracted as a free-corner artifact. Final quoted contrast: smooth
+   2.0 (L2) / 1.0 (energy) vs singular 4/3 / 2/3. Recorded in
+   `results_verified.md` sections 4, 6, 8 and audit log items 5, 8, 9.
 4. **Final residual audit.** Scaled residuals on all Direction-2 tables:
    1e-15..1e-14 on every mesh and closure/BC combination. Raw residuals
-   shown once to justify the scaling. The nonsymmetry number
-   (||A - A^T||/||A|| ~ 0.12) re-confirmed at N=64.
+   shown once to justify the scaling. The nonsymmetry numbers
+   (||A - A^T||_F/||A||_F = 3.95e-02 / 3.93e-02 at N=64) re-confirmed
+   and now identical in definition and value to the Algorithm branch's
+   E1 CSV.
 5. **Package freeze for submission.** `report_testing_validation.md`
    written as the verification evidence behind the report numbers;
    `week9_final_audit.md` checkboxes resolved (done items checked, pending

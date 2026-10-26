@@ -11,24 +11,34 @@ Prediction (written before the first run, pre-computation protocol):
 energy O(h^1) smooth vs. O(h^{2/3}) singular; L2 O(h^2) smooth vs. the
 singular leg's measured ~1.0.  Whatever is measured below is reported.
 
-WHY THIS SCRIPT LOOKS THE WAY IT DOES -- the L2 quadrature saga:
+THE L2 QUADRATURE STORY (three revisions, kept short):
 
-The L2 error signal is TINY: int e^2 ~ h^4 (e.g. 8e-3 at h=1/16), while
-the integrands that make it up are O(1).  Every low-order rule we tried
-(int e^2 directly at any composite depth, the interpolant split, the
-three-term expansion) has quadrature error O(h^3) in the integral --
-the same order as the signal -- because e is small pointwise but grad e
-is O(1) pointwise, so third derivatives of e^2 are O(1).  All those
-methods agree with each other at fixed refinement to <1e-3 yet still
-drift ~50% per refinement level: agreement between two imperfect
-methods is not convergence.
+The L2 error signal is TINY: int e^2 ~ h^4, while the integrands that
+make it up are O(1).  Revision 1 (plain composite rules at any depth)
+had quadrature error O(h^3) -- the same order as the signal -- because
+grad e is O(1) pointwise.  Revision 2 used the Duffy transform (square
+-> triangle) with tensor Gauss, plus composite refinement of the corner
+triangles for the singular leg, with a 3-vs-4-level self-check.  That
+self-check always passed, yet our singular-leg L2 sat ~3.2x above the
+Algorithm branch's E5 numbers on comparable meshes.
 
-The fix used here: Duffy transform (square -> triangle) with a tensor
-Gauss-Legendre rule.  n=3 per direction (9 points per triangle) gives
-per-triangle error O(h^8 |f|_{W^{6,inf}}), i.e. O(h^6) summed -- two
-orders below the h^4 signal.  For the singular leg the corner triangles
-are composite-refined first (e ~ r^{2/3} there), then Duffy-integrated
-on the subtriangles, with a 3-vs-4-level check.
+Revision 3 (final, lives in week6_lshape_fem.py and is imported here):
+the corner elements are integrated by the EXACT radial /
+adaptive-angular formula ported from the Algorithm branch's fem_impl
+(_singular_corner_integral -- analytic in r because the corner value of
+u_h is zero, scipy.integrate.quad on the smooth angular integral), and
+every other element uses Duffy tensor Gauss at n=8, the same order as
+their intorder=8.  Two more slips had to be fixed before the numbers
+matched theirs: the re-entrant corner must be a Dirichlet node (a free
+corner node silently decouples from the zero trace of u* on the cut
+edges), and the composite 3-point rules we used away from the corner
+were biased by ~7x on the singular leg.  With all three fixed, our
+table reproduces their E5 values to three significant figures
+(7.5922e-3 / 3.0235e-3 / 1.1972e-3 / 4.7313e-4 at dof 161/705/2945/
+12033, vs their 7.59e-3 / 3.02e-3 / 1.20e-3 / 4.73e-4).  Lessons are
+logged in week8_ai_audit_log.md: all our revision-2 checks compared two
+quadratures with the SAME blind spot, and a self-check only tests what
+it tests.
 
 A second diagnostic settles the *interpretation* of the smooth-leg L2
 rate: the error splits as e = theta - rho with
@@ -42,18 +52,16 @@ whether the gap is interpolation (rho) or corner pollution (theta).
 Run:  python week8_smooth_vs_nonsmooth.py   (a few minutes)
 """
 import time
+
 import numpy as np
 import scipy.sparse.linalg as spla
 
-from week6_lshape_fem import build_mesh, assemble, solve_level, integrate_errors
+from week6_lshape_fem import (build_mesh, assemble, solve_level,
+                              _singular_corner_integral, _l2_duffy_core,
+                              _h1_midpoint_sq, _gauss_rule)
 from week5_verify_analytic import ustar_lshape, grad_ustar_lshape
 
 LEVELS = (8, 16, 32, 64, 128)
-
-# 1D Gauss-Legendre nodes/weights on [-1,1]
-_GAUSS = {1: ([0.0], [2.0]),
-          2: ([-0.5773502691896257, 0.5773502691896257], [1.0, 1.0]),
-          3: ([-0.7745966692414834, 0.0, 0.7745966692414834], [5.0 / 9, 8.0 / 9, 5.0 / 9])}
 
 
 # ----------------------------------------------------------------------
@@ -74,8 +82,8 @@ def assemble_load_clean(xy, tris):
     det = (p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1]) \
           - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1])
     b = np.zeros(len(xy))
-    for s, ws in zip(*_GAUSS[2]):
-        for t, wt in zip(*_GAUSS[2]):
+    for s, ws in zip(*_gauss_rule(2)):
+        for t, wt in zip(*_gauss_rule(2)):
             lam = (0.5 * (1 + s), 0.25 * (1 - s) * (1 + t), 0.25 * (1 - s) * (1 - t))
             wgt = abs(det) / 8.0 * (1 - s) * ws * wt
             qx = lam[0] * p0[:, 0] + lam[1] * p1[:, 0] + lam[2] * p2[:, 0]
@@ -87,63 +95,33 @@ def assemble_load_clean(xy, tris):
 
 
 # ----------------------------------------------------------------------
-# Duffy-transform Gauss quadrature of int (u_h - ue)^2
+# L2 error: exact corner integral + Duffy n=8 elsewhere (both imported)
 # ----------------------------------------------------------------------
-def refine_fields(xy, tris, fields):
-    """4-way midpoint refinement carrying any number of P1 nodal fields."""
-    mids, new_xy, new_vals = {}, [], [[] for _ in fields]
-    def mid(a, b):
-        key = (min(a, b), max(a, b))
-        if key not in mids:
-            mids[key] = len(xy) + len(new_xy)
-            new_xy.append(0.5 * (xy[a] + xy[b]))
-            for f, acc in zip(fields, new_vals):
-                acc.append(0.5 * (f[a] + f[b]))
-        return mids[key]
-    sub = []
-    for t in tris:
-        a, b, c = t
-        ab, bc, ca = mid(a, b), mid(b, c), mid(c, a)
-        sub += [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]]
-    xy = np.vstack([xy, np.array(new_xy)]) if new_xy else xy
-    return xy, np.array(sub), [np.concatenate([f, np.array(v)]) for f, v in zip(fields, new_vals)]
+def l2_duffy(xy, tris, uh, ue, n=8, singular=False):
+    """int (u_h - ue)^2 over the mesh, as (value, quadrature error est.).
 
-
-def l2_duffy(xy, tris, uh, ue, n=3, corner_levels=0, radius=0.0):
-    """int (u_h - ue)^2 by Duffy-Gauss.  For a singular ue, triangles
-    within `radius` of the origin are composite-refined `corner_levels`
-    times first (carrying u_h exactly)."""
-    if corner_levels > 0:
-        dmin = np.abs(xy[tris]).min(axis=(1, 2))
-        sel = dmin < radius
-        if sel.any():
-            xyc, trc, (uhc,) = refine_fields(xy, tris[sel], (uh,))
-            for _ in range(corner_levels - 1):
-                xyc, trc, (uhc,) = refine_fields(xyc, trc, (uhc,))
-            l2_sq = _l2_duffy_core(xy, tris[~sel], uh, ue, n) if (~sel).any() else 0.0
-            l2_sq += _l2_duffy_core(xyc, trc, uhc, ue, n)
-            return np.sqrt(l2_sq)
-    return np.sqrt(_l2_duffy_core(xy, tris, uh, ue, n))
-
-
-def _l2_duffy_core(xy, tris, uh, ue, n):
-    p0, p1, p2 = xy[tris[:, 0]], xy[tris[:, 1]], xy[tris[:, 2]]
-    det = (p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1]) \
-          - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1])
-    uh0, uh1, uh2 = uh[tris[:, 0]], uh[tris[:, 1]], uh[tris[:, 2]]
-    total = 0.0
-    for s, ws in zip(*_GAUSS[n]):
-        for t, wt in zip(*_GAUSS[n]):
-            lam0 = 0.5 * (1 + s)
-            lam1 = 0.25 * (1 - s) * (1 + t)
-            lam2 = 0.25 * (1 - s) * (1 - t)
-            wgt = abs(det) / 8.0 * (1 - s) * ws * wt
-            qx = lam0 * p0[:, 0] + lam1 * p1[:, 0] + lam2 * p2[:, 0]
-            qy = lam0 * p0[:, 1] + lam1 * p1[:, 1] + lam2 * p2[:, 1]
-            uh_q = lam0 * uh0 + lam1 * uh1 + lam2 * uh2
-            e = uh_q - ue(qx, qy)
-            total += np.sum(wgt * e**2)
-    return total
+    singular=False: Duffy tensor Gauss at order n on every element
+        (n=8 matches the Algorithm branch's intorder=8 away from the
+        corner; the smooth leg is smooth, so no special route is needed).
+    singular=True:  elements with a vertex at the re-entrant corner use
+        the exact radial/angular integral (_singular_corner_integral);
+        all other elements use Duffy at order n.  The returned error
+        estimate is the adaptive quad's own estimate on the corner
+        elements, relative to which the Duffy part is exact to machine
+        precision for these integrands.
+    """
+    if singular:
+        rad = np.linalg.norm(xy[tris], axis=2)
+        is_corner = rad.min(axis=1) < 1e-12
+        l2_sq, quad_err = 0.0, 0.0
+        for t in tris[is_corner]:
+            a, _, ea = _singular_corner_integral(xy[t], uh[t])
+            l2_sq += a
+            quad_err += ea
+        if (~is_corner).any():
+            l2_sq += _l2_duffy_core(xy, tris[~is_corner], uh, ue, n)
+        return np.sqrt(l2_sq), quad_err
+    return np.sqrt(_l2_duffy_core(xy, tris, uh, ue, n)), float("nan")
 
 
 def theta_norm_exact(xy, tris, uh, uI):
@@ -159,21 +137,21 @@ def theta_norm_exact(xy, tris, uh, uI):
     return np.sqrt(np.sum(area / 3.0 * (m01**2 + m12**2 + m20**2)))
 
 
-def integrate_energy(xy, tris, uh, grad_ue):
-    """Energy seminorm error; integrand converges cleanly under 3-point."""
-    p0, p1, p2 = xy[tris[:, 0]], xy[tris[:, 1]], xy[tris[:, 2]]
-    area = 0.5 * np.abs((p1[:, 0] - p0[:, 0]) * (p2[:, 1] - p0[:, 1])
-                        - (p2[:, 0] - p0[:, 0]) * (p1[:, 1] - p0[:, 1]))
-    qpts = [0.5 * (p0 + p1), 0.5 * (p1 + p2), 0.5 * (p2 + p0)]
-    dlam0x = (p1[:, 1] - p2[:, 1]) / (2 * area); dlam0y = (p2[:, 0] - p1[:, 0]) / (2 * area)
-    dlam1x = (p2[:, 1] - p0[:, 1]) / (2 * area); dlam1y = (p0[:, 0] - p2[:, 0]) / (2 * area)
-    gh_x = dlam0x * uh[tris[:, 0]] + dlam1x * uh[tris[:, 1]] - (dlam0x + dlam1x) * uh[tris[:, 2]]
-    gh_y = dlam0y * uh[tris[:, 0]] + dlam1y * uh[tris[:, 1]] - (dlam0y + dlam1y) * uh[tris[:, 2]]
+def integrate_energy(xy, tris, uh, grad_ue, singular=False):
+    """Energy seminorm error, same measuring stick as week6's
+    integrate_errors: exact corner integral on the corner elements when
+    singular=True, 3-point edge-midpoint rule elsewhere."""
     h1_sq = 0.0
-    for qp in qpts:
-        g = grad_ue(qp[:, 0], qp[:, 1])
-        h1_sq += np.sum(area / 3.0 * ((gh_x - g[0])**2 + (gh_y - g[1])**2))
-    return np.sqrt(h1_sq)
+    if singular:
+        rad = np.linalg.norm(xy[tris], axis=2)
+        is_corner = rad.min(axis=1) < 1e-12
+        for t in tris[is_corner]:
+            _, b, _ = _singular_corner_integral(xy[t], uh[t], need_h1=True)
+            h1_sq += b
+        tris = tris[~is_corner]
+        if not len(tris):
+            return np.sqrt(h1_sq)
+    return np.sqrt(h1_sq + _h1_midpoint_sq(xy, tris, uh, grad_ue))
 
 
 def solve_smooth(n):
@@ -196,29 +174,25 @@ def fmt_orders(o):
     return " / ".join(f"{p:.2f}" for p in o)
 
 
-def run_leg(label, solver, ue, grad_ue, n_duffy=3, corner=0, radius=0.0, decompose=False):
+def run_leg(label, solver, ue, grad_ue, n_duffy=8, singular=False, decompose=False):
     print(f"\n### {label} ###")
     if decompose:
         print("| n | h | N_dof | L2(u_h-u_e) | ||theta||=||u_h-u_I|| | ||rho||=||u_e-u_I|| | energy | L2 order | energy order |")
         print("|---|---|---|---|---|---|---|---|---|")
     else:
-        print("| n | h | N_dof | L2 error | corner quad check | energy error | L2 order | energy order |")
+        print("| n | h | N_dof | L2 error | corner quad rel-err | energy error | L2 order | energy order |")
         print("|---|---|---|---|---|---|---|---|")
     l2s, ens = [], []
     for n in LEVELS:
         xy, tris, interior, h, uh, t = solver(n)
-        l2 = l2_duffy(xy, tris, uh, ue, n=n_duffy, corner_levels=corner, radius=radius)
-        if corner > 0:
-            l2c = l2_duffy(xy, tris, uh, ue, n=2, corner_levels=corner + 1, radius=radius)
-            chk = abs(l2 - l2c) / l2
-        else:
-            chk = float("nan")
-        en = integrate_energy(xy, tris, uh, grad_ue)
+        l2, qerr = l2_duffy(xy, tris, uh, ue, n=n_duffy, singular=singular)
+        chk = qerr / (l2 * l2) if singular else float("nan")
+        en = integrate_energy(xy, tris, uh, grad_ue, singular=singular)
         l2s.append(l2); ens.append(en)
         if decompose:
             uI = ue(xy[:, 0], xy[:, 1])
             th = theta_norm_exact(xy, tris, uh, uI)
-            rho = l2_duffy(xy, tris, uI, ue, n=n_duffy, corner_levels=corner, radius=radius)
+            rho, _ = l2_duffy(xy, tris, uI, ue, n=n_duffy)
             line = f"| {n} | {h:.4f} | {interior.sum()} | {l2:.4e} | {th:.4e} | {rho:.4e} | {en:.4e} "
         else:
             line = f"| {n} | {h:.4f} | {interior.sum()} | {l2:.4e} | {chk:.1e} | {en:.4e} "
@@ -233,22 +207,24 @@ def run_leg(label, solver, ue, grad_ue, n_duffy=3, corner=0, radius=0.0, decompo
 
 if __name__ == "__main__":
     print("smooth vs. nonsmooth on the L-domain: same solver, meshes, norms.")
-    print("L2 by Duffy-transform tensor Gauss (n=3 smooth; corner-refined")
-    print("n=2 singular with a 3-vs-4-level check); energy by 3-point.")
+    print("L2: exact radial/angular integral on the corner elements (ported")
+    print("from the Algorithm branch's certified corner route) + Duffy n=8")
+    print("elsewhere; energy by the exact corner integral + 3-point edge rule.")
 
     # quadrature self-convergence on the smooth leg (should be ~exact):
     print("\n[L2 quadrature self-convergence, smooth leg, n=32]")
     xy, tris, interior, h, uh, _ = solve_smooth(32)
-    for n in (1, 2, 3):
-        print(f"  Duffy n={n}: {l2_duffy(xy, tris, uh, ue_smooth, n=n):.8e}")
-    print("  (n=1 is NOT expected to agree -- shown to demonstrate sensitivity)")
+    for n in (2, 3, 8):
+        val, _ = l2_duffy(xy, tris, uh, ue_smooth, n=n)
+        print(f"  Duffy n={n}: {val:.8e}")
+    print("  (production rule is n=8, matching the Algorithm branch's intorder=8)")
 
     l2_s, en_s = run_leg("smooth leg: u_s = exp(x+y) (f = -2 exp(x+y))",
                          solve_smooth, ue_smooth, grad_ue_smooth,
-                         n_duffy=3, decompose=True)
+                         n_duffy=8, decompose=True)
     l2_n, en_n = run_leg("nonsmooth leg: u* = r^{2/3} sin(2 phi / 3)",
                          solve_level, ustar_lshape, grad_ustar_lshape,
-                         n_duffy=2, corner=3, radius=0.25)
+                         n_duffy=8, singular=True)
 
     print("\n### contrast (same solver, same meshes, same norms) ###")
     print(f"  L2:     smooth {fmt_orders(orders(l2_s))}   singular {fmt_orders(orders(l2_n))}")

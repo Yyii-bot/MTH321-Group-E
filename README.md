@@ -24,9 +24,10 @@ one-sided first-order row or the ghost-point row. Manufactured data
 **Open direction 1 — L-shaped domain** (−1,1)² minus one unit quadrant,
 area exactly 3. Singular solution u* = r^{2/3} sin(2φ/3) with
 φ ∈ [0, 3π/2] (unit-tested in week 5, including the quadrant-IV branch);
-smooth comparison leg u_s = exp(x+y). P1 FEM on exactly-represented
-uniform meshes, plus the smooth-vs-singular depth study on identical
-meshes and norms.
+smooth comparison leg u_s = exp(x+y). The re-entrant corner (0,0) is a
+Dirichlet node (zero trace on the cut edges). P1 FEM on
+exactly-represented uniform meshes, plus the smooth-vs-singular depth
+study on identical meshes and norms.
 
 ## Environment
 
@@ -44,8 +45,8 @@ to be pasted into `results_verified.md`.
 python week5_verify_analytic.py     # manufactured data, all green expected
 python week5_boundary_rows.py       # right-edge rows: O(h) local residuals
 python week6_mixed_refinement.py    # Direction-2 convergence tables + asymmetry
-python week6_lshape_fem.py          # L-shape energy rates (its printed L2 column is superseded, see Conventions)
-python week8_smooth_vs_nonsmooth.py # depth comparison 4, both legs + Duffy integrator validation
+python week6_lshape_fem.py          # L-shape FEM: L2 + energy rates, one integrator
+python week8_smooth_vs_nonsmooth.py # depth comparison 4, both legs
 python week7_effectivity.py <adaptive.csv>   # once the adaptive CSV exists
 ```
 
@@ -63,7 +64,9 @@ errors and fitted orders are the portable evidence.
 
 - scaled residual ≤ 1e-10 at any iterative stop (rtol = 1e-8 was measured
   to leave the solution error 80% wrong — week8_depth_checks.py);
-- L-shape L2 quadrature self-check (corner levels 3 vs 4) below ~5%;
+- L-shape L2 quadrature self-check (Duffy n=8 vs n=6) below ~1e-5, and the
+  corner angular quadrature's own error estimate below ~1e-8
+  (week6_lshape_fem.py);
 - mesh area exactly 3 at every refinement level;
 - Dirichlet corner-ownership assertion passes in the assembler;
 - any number in the report traces to `results_verified.md` → table →
@@ -76,11 +79,11 @@ errors and fitted orders are the portable evidence.
 | `week5_verify_analytic.py` | 5 | manufactured data checks, no solver involved |
 | `week5_boundary_rows.py` | 5 | four right-edge rows verified by substitution; corner-ownership helper |
 | `week6_mixed_refinement.py` | 6 | reference FDM solver; four-mesh tables; scaled residuals; asymmetry; tolerance probe |
-| `week6_lshape_fem.py` | 6 | reference P1 FEM on exact L-shape meshes; energy rates; mesh audit |
+| `week6_lshape_fem.py` | 6 | reference P1 FEM on exact L-shape meshes; corner-exact + Duffy-n8 error integrator; L2+energy rates; mesh audit |
 | `week7_clinic_readiness.md` | 7 | frozen discretisation/norm/tolerance triple; evidence list; adaptive protocol |
 | `week7_effectivity.py` | 7 | effectivity index (η / true error) for the adaptive sequence, CSV in → table + figure |
 | `week8_depth_checks.py` | 8 | matched-settings gate; tolerance sweep; direct-vs-iterative; FDM-vs-FEM gate |
-| `week8_smooth_vs_nonsmooth.py` | 8 | depth comparison 4; Duffy L2 integrator (validated vs `scipy.dblquad`); θ/ρ split |
+| `week8_smooth_vs_nonsmooth.py` | 8 | depth comparison 4, both legs; θ/ρ split; shares week6's integrator |
 | `week8_iterative_ladder.py` | 8 | Jacobi/GS/SOR/CG/GMRES+ILU ladder on the Direction-2 matrix; SOR ω_opt theory check |
 | `week8_ai_audit_log.md` | 8 | five-gate audit of every AI-generated solver piece, incl. caught bugs |
 | `week9_final_audit.md` | 9 | pre-submission checklist with `[x]` / `[team]` status per item |
@@ -95,23 +98,22 @@ errors and fitted orders are the portable evidence.
 - Residuals are **row-scaled** (D_ii = max_j |A_ij|) wherever PDE rows
   (h⁻²) and boundary rows (h⁻¹) coexist; raw residuals are printed once
   to justify the scaling.
-- Nonsymmetry is quoted in the **inf norm**: ‖A−Aᵀ‖∞/‖A‖∞ ≈ 0.12 at
-  N = 64 for both closures. (The Algorithm Implementation seat reports a
-  Frobenius-norm ratio, a different functional — name the norm wherever
-  either is quoted.)
-- `week6_lshape_fem.py`'s printed L2 column is quadrature-inflated and
-  **superseded** by the Duffy re-measurement in
-  `week8_smooth_vs_nonsmooth.py`; its energy rates and mesh code remain
-  authoritative (the week-8/9 scripts import them).
+- Nonsymmetry is quoted in the **Frobenius norm**:
+  ‖A−Aᵀ‖_F/‖A‖_F = 3.95e-02 (ghost) / 3.93e-02 (first-order) at N = 64,
+  with exactly the definition the Algorithm branch uses — one number, two
+  independent implementations (their E1 CSV matches both values).
+- L-shape error measurement (one stick, everywhere): corner elements get
+  the exact radial / adaptive-angular integral ported from the Algorithm
+  branch's fem_impl; all other elements get Duffy tensor Gauss at n=8
+  (their intorder=8) for L2 and the 3-point edge-midpoint rule for the
+  energy seminorm. Correction history (two earlier rounds were retracted
+  in writing): audit log items 5, 8, 9.
 - The week-6 reference solvers are validation scaffolding, deliberately
-  independent of the main implementation. The cross-check is no longer
-  pending: on 2026-10-26 the main solver's ghost-Neumann errors agreed
+  independent of the main implementation. The cross-checks are no longer
+  pending: on 2026-10-26 the main solver's ghost-Neumann FDM errors agreed
   with this package's reference solver to six significant figures at
-  N = 32/64/128 (L2 and Linf).
-- One open discrepancy is recorded in the audit trail (item in
-  `results_verified.md` section 4 note and `needs_from_team.md`): the
-  main implementation's corner-exact L2 quadrature reports singular-leg
-  errors ~3× smaller than this package's Duffy values at identical
-  degrees of freedom, same fitted orders. Absolute L2 values from the
-  two packages must not be mixed in one table until that head-to-head
-  is closed.
+  N = 32/64/128 (L2 and Linf); on 2026-10-27 the L-shape FEM table
+  reproduced the main implementation's E5 values to three or more
+  significant figures at identical N_dof (161/705/2945/12033). The "~3x
+  L2 discrepancy" recorded during the branch review was our free corner
+  node plus low-order quadrature, not their bug — closed.

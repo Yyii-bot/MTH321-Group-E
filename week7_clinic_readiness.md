@@ -23,18 +23,23 @@ vet):**
 4. Algebraic-vs-discretisation error separated on a representative mesh
    (direct backward residual + GMRES tolerance sweep; the error plateaus
    where it should).
-5. Matrix structure: spy plots, ||A - A^T||/||A|| ~ 0.12, solver choice
+5. Matrix structure: spy plots, ||A - A^T||_F/||A||_F ~ 0.04 (Frobenius,
+   shared definition with the Algorithm branch), solver choice
    (sparse direct) justified by nonsymmetry.
 6. L-shape: branch convention unit-tested; f = 0 verified; zero-trace
-   rays verified; energy rate 0.66 (theory 2/3); L2 measured 1.0,
-   discussed against the h^{4/3-eps} guarantee; quadrature adequacy
-   demonstrated (3 vs 4 corner composite levels).
+   rays verified; energy rate 0.64-0.66 (theory 2/3); L2 measured
+   1.31-1.34 (theory 4/3, updated 2026-10-27 after the corner-node and
+   quadrature fixes); quadrature adequacy demonstrated (corner-exact
+   analytic integral + Duffy n=8 vs n=6 self-check at 1e-7).
 
 **Known weaknesses to raise at the clinic (better here than in the report):**
 
-- L2 rate on uniform L-shape meshes sits at ~1.0, not 4/3. We believe
-  this is the honest measured behaviour in the reachable range; we will
-  NOT claim 4/3.
+- L2 rate on uniform L-shape meshes: first measurement said ~1.0, the
+  second 1.25-1.32; the final corner-node + corner-exact-quadrature fix
+  (2026-10-27) lands it at 1.31-1.34 vs h, i.e. textbook 4/3, and the
+  absolute values then agree with the Algorithm branch's E5 table to
+  three+ significant figures at identical N_dof. The history is the
+  audit-trail talking point, not a weakness to hide.
 - The adaptive estimator still needs its effectivity evidence (below).
 
 ## Adaptive study: effectivity plan (innovation point)
