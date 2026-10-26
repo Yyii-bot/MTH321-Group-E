@@ -1,109 +1,83 @@
-# Individual Contribution Statement
+# Individual Contribution Statement — Project 2 (Elliptic BVPs)
 
-**Project 2 -- Numerical Solution of Elliptic BVPs, Weeks 5-9**
-Team direction: Direction 2 (mixed Dirichlet/Neumann/Robin data, FDM,
-two boundary closures) + Open Direction 1 (L-shaped domain with adaptive
-refinement); all four depth comparisons.
-My seat: **Testing & Validation**.
+**Name:** Rong Yin
+**Role this project:** Testing & Validation
 
-## My responsibility
+## The specific things I did this project
 
-I owned the question "can the numbers in the report be believed". That
-meant the manufactured-solution pipeline, the four-mesh refinement
-protocol with named norms and fitted orders, separating algebraic error
-from discretisation error, and hunting the edge cases that everyone else
-was too busy building things to look for.
+1. Verified all manufactured data before any solver existed
+   (`week5_verify_analytic.py`, `week5_boundary_rows.py`): re-derived
+   f = -2 exp(x+y) with a five-point stencil, sign-checked q and r on
+   all edges, unit-tested the L-shape branch convention including
+   quadrant-IV points, and verified all four right-edge discrete rows by
+   substituting sampled u* values into the assembled rows.
 
-## What I actually did
+2. Built the reference FDM solver (`week6_mixed_refinement.py`),
+   deliberately independent of the main implementation, and caught the
+   Dirichlet-to-RHS sign error by plugging u* into A u* - b per row
+   while every scaled residual sat at 1e-15 — the reason the report
+   says "a small algebraic residual alone does not validate the boundary
+   discretisation". Produced the four-mesh convergence tables for all
+   four closure/BC combinations (first-order ~1 everywhere, ghost ~2
+   everywhere).
 
-**Week 5.** Verified all manufactured data before any solver existed:
-re-derived f = -2 exp(x+y) with a stencil instead of trusting my own
-calculus, checked boundary data signs (q > 0 nails the outward normal),
-unit-tested the L-shape branch convention including the quadrant-IV
-points, verified f = 0, the two zero-trace rays and the nonzero outer
-data. Verified all four right-edge discrete rows by substituting sampled
-values of u*, and added a corner-ownership assertion so the Dirichlet
-corners can never be overwritten by a boundary row. Caught one bug in
-my own test code while doing this (the Robin row was double-counting q).
+3. Built the reference P1 FEM on exactly-represented L-shape meshes
+   (`week6_lshape_fem.py`): energy order 0.66 vs h (theory 2/3), mesh
+   area == 3 hard check, corner-aware quadrature with a 3-vs-4-level
+   cross-check column.
 
-**Week 6.** Built a small *reference* FDM solver (separate from the main
-implementation) so the tables could exist early and the main solver
-would have something independent to disagree with. It caught a real
-sign error: Dirichlet columns were being moved to the rhs with the wrong
-sign, and only the row-substitution check found it -- the scaled
-residuals were machine-zero the whole time, which is exactly why the
-course says residuals alone prove nothing. Produced the four-mesh tables
-for all four closure/BC combinations: first-order closure lands at
-order ~1 in every norm, ghost closure at ~2 including at the boundary
-nodes. Split boundary vs. interior error (the first-order closure's
-defect dominates globally). Quantified the matrix nonsymmetry
-(~0.12) and recorded why that kills CG as an option. Ran the
-tolerance-sweep separation of algebraic vs. discretisation error.
-For the L-shape I built a reference P1 FEM on exactly-represented
-meshes: energy error 0.66 vs h (theory 2/3), and the L2 rate first
-measured at ~1.0. That L2 number turned out to be quadrature pollution
-(see Week 8/9), not physics; the re-measured rate is 1.25-1.32, rising
-toward the h^{4/3} guarantee. The episode also showed that plain 3-point
-quadrature mis-measures the L2 norm by up to 50% near the corner, so
-every L2 number we report now comes from the Duffy-transform
-tensor-Gauss integrator with a 3-vs-4-level cross-check.
+4. Found and retracted my own wrong numbers: the Week-6 L2 column was
+   quadrature-inflated (two low-order rules agreed with each other to
+   <1e-3 but both drifted ~50% across refinement levels). Re-measured
+   with a Duffy-transform tensor-Gauss integrator
+   (`week8_smooth_vs_nonsmooth.py`), validated against scipy dblquad,
+   giving the corrected L2 order 1.25-1.32 rising toward 4/3. The
+   retraction is written down in results_verified.md section 4 and
+   audit-log item 5, not silently replaced.
 
-**Week 7.** Assembled the clinic readiness sheet; froze the
-discretisation/norm/tolerance triple and the matched-settings protocol
-for the depth comparisons. Designed the effectivity-index study
-(eta / true energy error on every adaptive level) that our adaptive
-claim rests on.
+5. Ran the smooth-vs-nonsmooth depth comparison on the same solver,
+   meshes and norms: smooth leg L2 1.65-1.70 / energy 1.00, singular leg
+   L2 1.25-1.32 / energy 0.66, with the theta/rho decomposition showing
+   the smooth leg is itself pollution-capped near 5/3 — the quantified
+   ladder 2.0 -> 5/3 -> 4/3 (`week8_smooth_vs_nonsmooth.py`,
+   results_verified.md section 6).
 
-**Week 8.** Ran the tolerance sweep used as the "tolerance
-contamination" evidence (GMRES at rtol=1e-8 still corrupts the error by
-~80%; rtol=1e-10 is the first clean level). Ran the direct-vs-iterative
-comparison at matched accuracy: no crossover in the tested range, direct
-wins by 19x-214x, reported as such. Completed the five-gate AI audit
-for every AI-generated solver piece and wrote the audit log. Reproduced
-every table from a clean shell.
+6. Quantified solver-tolerance contamination (`week8_depth_checks.py`):
+   GMRES at rtol=1e-8 still corrupts the solution error by ~80% with an
+   apparently excellent residual; 1e-10 is the first clean level. Froze
+   the scaled-residual stopping criterion the whole package now uses.
 
-**Week 9.** Ran the final audit end to end: clean-shell reproduction of
-every script (all table numbers reproduced, timings excepted), the
-Ctrl-F number-tracing pass over the report, the final residual audit
-(1e-15..1e-14 scaled on every mesh), and the package freeze. Finished
-the smooth-vs-nonsmooth correction from Week 8: re-measured the L-shape
-L2 column with the Duffy + tensor-Gauss integrator and completed the
-theta/rho decomposition, giving the final quantified ladder
-2.0 -> 5/3 -> 4/3. Wrote the Testing & Validation report, finalised this
-ICS. Wrote the diff-script scope for the main-solver cross-check so it
-is a 30-minute job the day the interface lands.
+7. Ran the iterative method ladder on the Direction-2 matrix
+   (`week8_iterative_ladder.py`): Jacobi/GS/SOR/CG/GMRES+ILU at the same
+   stop criterion, N = 64..256. No rung beats the sparse direct solve —
+   even GMRES+ILU is 1.5-1.9x slower — so the no-crossover finding
+   survives preconditioning. Verified the lecture's SOR omega_opt
+   formula on its own model problem (270 iterations at the theory value,
+   N=64) and recorded the surprise that CG converged on the nonsymmetric
+   matrix (748 vs 436 SPD iterations) instead of the predicted breakdown.
 
-## What I did not do
+8. Wrote and maintained the evidence ledger (`results_verified.md`, the
+   only file the report quotes numbers from), the five-gate AI audit log
+   (`week8_ai_audit_log.md`, including five caught bugs and two recorded
+   prediction misses), the clinic readiness sheet, the effectivity-index
+   script awaiting the adaptive CSV, and the final pre-submission audit
+   (`week9_final_audit.md`). Every claim above traces to a commit and a
+   rerun command.
 
-- The main FDM/FEM implementation belongs to [Algorithm Implementation
-  teammate]; my reference solvers are validation scaffolding, clearly
-  labelled as such, not the deliverable solver.
-- Weak forms, truncation derivations and regularity theory belong to
-  [Mathematical Theory teammate]; I checked their discrete rows against
-  manufactured values but did not derive them.
-- Report/slides typesetting belongs to [Visualization & Report
-  teammate]; I supplied the verification tables, residual audits and
-  figure-ready data, and proofread every accuracy claim.
-- Repo, meetings and weekly records belong to [PM teammate].
+## What I would do differently
 
-## The part I would defend hardest in the Q&A
+Budget the quadrature validation before the first L2 table, not after:
+the corner quadrature failure cost a written retraction and a re-run of
+the L-shape study. A cheap manufactured-integral test of the integrator
+on day one would have caught it in minutes.
 
-The ghost-closure story: O(h) local defect, O(h^2) global error, and the
-evidence chain that shows both (row substitution, then solution-error
-tables). Also the scaled-residual argument, and the honest L2 gap on the
-L-shape -- measuring 1.0 where the optimistic quote is 4/3, and being
-able to say why that's still consistent with theory.
+## Anything I should have asked for help with earlier
 
-## Reflection
-
-The moment that rewired how I think about verification was finding the
-Dirichlet sign error while every residual sat at 1e-15: a number can be
-exactly self-consistent and still wrong, which is why "two low-order
-methods agree with each other" turned out to mean nothing for the L2
-column either. Catching my own wrong numbers twice in one project was
-not embarrassing, it was the job -- the evidence chain is only worth
-anything if it can retract a number as loudly as it quotes one.
+The main solver interface for the cross-check. I scoped the diff script
+in Week 7 but should have pushed harder for a callable interface by Week
+8 — the "reference solver, cross-check pending" label on my tables could
+have been removed before the deadline instead of after it.
 
 ---
 
-Name: Rong Yin   Date: 2026-10-25
+Name: Rong Yin   Date: 2026-10-26
