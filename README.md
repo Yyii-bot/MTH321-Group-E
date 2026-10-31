@@ -61,4 +61,4 @@ The English edition incorporates **one mathematical correction** relative to the
 ---
 *MTH321 · Department of Applied Mathematics · October 2026*
 
-> AI生成
+
